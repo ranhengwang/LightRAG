@@ -132,28 +132,31 @@ class LightRAG:
 
     # Directory
     # ---
-
+    # 使用 field - 适用于可变默认值或需要自定义行为，每个实例独立，  可以实现一个数据隔离的效果
+    # 缓存和临时文件存储目录
     working_dir: str = field(default="./rag_storage")
     """Directory where cache and temporary files are stored."""
 
     # Storage
     # ---
-
+    # 这里只是给了一个默认的，真正创建LightRAG实例时可以指定不同的存储后端
+    # 传参来通过构造函数来创造实例
+    # 键值存储
     kv_storage: str = field(default="JsonKVStorage")
     """Storage backend for key-value data."""
-
+    # 向量存储
     vector_storage: str = field(default="NanoVectorDBStorage")
     """Storage backend for vector embeddings."""
-
+    # 图存储
     graph_storage: str = field(default="NetworkXStorage")
     """Storage backend for knowledge graphs."""
-
+    # 文件状态存储
     doc_status_storage: str = field(default="JsonDocStatusStorage")
     """Storage type for tracking document processing statuses."""
 
     # Workspace
     # ---
-
+    # 工作区，用于数据隔离。如果未设置WORKSPACE环境变量，则默认为空字符串。
     workspace: str = field(default_factory=lambda: os.getenv("WORKSPACE", ""))
     """Workspace for data isolation. Defaults to empty string if WORKSPACE environment variable is not set."""
 
@@ -164,40 +167,40 @@ class LightRAG:
 
     # Query parameters
     # ---
-
+    # 每个查询检索的实体/关系数量
     top_k: int = field(default=get_env_value("TOP_K", DEFAULT_TOP_K, int))
     """Number of entities/relations to retrieve for each query."""
-
+    # 每个查询检索的文本块数量
     chunk_top_k: int = field(
         default=get_env_value("CHUNK_TOP_K", DEFAULT_CHUNK_TOP_K, int)
     )
     """Maximum number of chunks in context."""
-
+    # 上下文中实体的最大token数量
     max_entity_tokens: int = field(
         default=get_env_value("MAX_ENTITY_TOKENS", DEFAULT_MAX_ENTITY_TOKENS, int)
     )
     """Maximum number of tokens for entity in context."""
-
+    # 上下文中关系的最大token数量
     max_relation_tokens: int = field(
         default=get_env_value("MAX_RELATION_TOKENS", DEFAULT_MAX_RELATION_TOKENS, int)
     )
     """Maximum number of tokens for relation in context."""
-
+    # 上下文中总的最大token数量，包括系统提示、实体、关系和文本块
     max_total_tokens: int = field(
         default=get_env_value("MAX_TOTAL_TOKENS", DEFAULT_MAX_TOTAL_TOKENS, int)
     )
     """Maximum total tokens in context (including system prompt, entities, relations and chunks)."""
-
+    # 向量数据库检索的余弦相似度阈值
     cosine_threshold: int = field(
         default=get_env_value("COSINE_THRESHOLD", DEFAULT_COSINE_THRESHOLD, int)
     )
     """Cosine threshold of vector DB retrieval for entities, relations and chunks."""
-
+    # 每个实体或关系获取的相关文本块数量
     related_chunk_number: int = field(
         default=get_env_value("RELATED_CHUNK_NUMBER", DEFAULT_RELATED_CHUNK_NUMBER, int)
     )
     """Number of related chunks to grab from single entity or relation."""
-
+    # 知识图谱查询时选择文本块的方法, 'WEIGHT'表示基于权重选择，'VECTOR'表示基于嵌入相似度选择
     kg_chunk_pick_method: str = field(
         default=get_env_value("KG_CHUNK_PICK_METHOD", DEFAULT_KG_CHUNK_PICK_METHOD, str)
     )
@@ -205,12 +208,12 @@ class LightRAG:
 
     # Entity extraction
     # ---
-
+    # 对于不明确的内容，实体提取的最大尝试次数
     entity_extract_max_gleaning: int = field(
         default=get_env_value("MAX_GLEANING", DEFAULT_MAX_GLEANING, int)
     )
     """Maximum number of entity extraction attempts for ambiguous content."""
-
+    # 在合并实体/关系时强制使用LLM生成摘要的最小尝试次数
     force_llm_summary_on_merge: int = field(
         default=get_env_value(
             "FORCE_LLM_SUMMARY_ON_MERGE", DEFAULT_FORCE_LLM_SUMMARY_ON_MERGE, int
@@ -219,26 +222,27 @@ class LightRAG:
 
     # Text chunking
     # ---
-
+    # 文本块的最大token数量
     chunk_token_size: int = field(default=int(os.getenv("CHUNK_SIZE", 1200)))
     """Maximum number of tokens per text chunk when splitting documents."""
-
+    # 文本块之间的重叠token数量
     chunk_overlap_token_size: int = field(
         default=int(os.getenv("CHUNK_OVERLAP_SIZE", 100))
     )
     """Number of overlapping tokens between consecutive text chunks to preserve context."""
-
+    # 分词器实例
     tokenizer: Optional[Tokenizer] = field(default=None)
     """
     A function that returns a Tokenizer instance.
     If None, and a `tiktoken_model_name` is provided, a TiktokenTokenizer will be created.
     If both are None, the default TiktokenTokenizer is used.
     """
-
+    # 用于tiktoken分词的模型名称
     tiktoken_model_name: str = field(default="gpt-4o-mini")
     """Model name used for tokenization when chunking text with tiktoken. Defaults to `gpt-4o-mini`."""
 
     chunking_func: Callable[
+        # 下面这个List对应函数的参数类型
         [
             Tokenizer,
             str,
@@ -247,8 +251,10 @@ class LightRAG:
             int,
             int,
         ],
+        # 下面对应的是函数的返回值类型
         Union[List[Dict[str, Any]], Awaitable[List[Dict[str, Any]]]],
     ] = field(default_factory=lambda: chunking_by_token_size)
+    # Awaitable[T] = 需要 await 才能得到 T 的对象
     """
     Custom chunking function for splitting text into chunks before processing.
 
@@ -275,21 +281,21 @@ class LightRAG:
 
     # Embedding
     # ---
-
+    # 文本嵌入函数
     embedding_func: EmbeddingFunc | None = field(default=None)
     """Function for computing text embeddings. Must be set before use."""
-
+    # 对于嵌入模型的token限制
     embedding_token_limit: int | None = field(default=None, init=False)
     """Token limit for embedding model. Set automatically from embedding_func.max_token_size in __post_init__."""
-
+    # embedding计算的批处理大小
     embedding_batch_num: int = field(default=int(os.getenv("EMBEDDING_BATCH_NUM", 10)))
     """Batch size for embedding computations."""
-
+    # embedding函数的最大并发调用数
     embedding_func_max_async: int = field(
         default=int(os.getenv("EMBEDDING_FUNC_MAX_ASYNC", 8))
     )
     """Maximum number of concurrent embedding function calls."""
-
+        # 嵌入缓存配置
     embedding_cache_config: dict[str, Any] = field(
         default_factory=lambda: {
             "enabled": False,
@@ -302,55 +308,55 @@ class LightRAG:
     - similarity_threshold: Minimum similarity score to use cached embeddings.
     - use_llm_check: If True, validates cached embeddings using an LLM.
     """
-
+    # 嵌入缓存的默认超时时间
     default_embedding_timeout: int = field(
         default=int(os.getenv("EMBEDDING_TIMEOUT", DEFAULT_EMBEDDING_TIMEOUT))
     )
 
     # LLM Configuration
     # ---
-
+    #  大模型交互函数
     llm_model_func: Callable[..., object] | None = field(default=None)
     """Function for interacting with the large language model (LLM). Must be set before use."""
-
+    # LLM模型名称
     llm_model_name: str = field(default="gpt-4o-mini")
     """Name of the LLM model used for generating responses."""
-
+    # 实体/关系描述的最大token数量
     summary_max_tokens: int = field(
         default=int(os.getenv("SUMMARY_MAX_TOKENS", DEFAULT_SUMMARY_MAX_TOKENS))
     )
     """Maximum tokens allowed for entity/relation description."""
-
+    # 每个LLM响应允许的最大token数量
     summary_context_size: int = field(
         default=int(os.getenv("SUMMARY_CONTEXT_SIZE", DEFAULT_SUMMARY_CONTEXT_SIZE))
     )
     """Maximum number of tokens allowed per LLM response."""
-
+    # LLM摘要输出的推荐长度
     summary_length_recommended: int = field(
         default=int(
             os.getenv("SUMMARY_LENGTH_RECOMMENDED", DEFAULT_SUMMARY_LENGTH_RECOMMENDED)
         )
     )
     """Recommended length of LLM summary output."""
-
+    # LLM模型的最大并发调用数
     llm_model_max_async: int = field(
         default=int(os.getenv("MAX_ASYNC", DEFAULT_MAX_ASYNC))
     )
     """Maximum number of concurrent LLM calls."""
-
+    # LLM模型的其他关键字参数
     llm_model_kwargs: dict[str, Any] = field(default_factory=dict)
     """Additional keyword arguments passed to the LLM model function."""
-
+    # LLM函数的默认超时时间
     default_llm_timeout: int = field(
         default=int(os.getenv("LLM_TIMEOUT", DEFAULT_LLM_TIMEOUT))
     )
 
     # Rerank Configuration
     # ---
-
+    # 文档重排序函数
     rerank_model_func: Callable[..., object] | None = field(default=None)
     """Function for reranking retrieved documents. All rerank configurations (model name, API keys, top_k, etc.) should be included in this function. Optional."""
-
+    # 重排序的最小分数阈值
     min_rerank_score: float = field(
         default=get_env_value("MIN_RERANK_SCORE", DEFAULT_MIN_RERANK_SCORE, float)
     )
@@ -358,36 +364,36 @@ class LightRAG:
 
     # Storage
     # ---
-
+    # 向量数据库存储的额外参数
     vector_db_storage_cls_kwargs: dict[str, Any] = field(default_factory=dict)
     """Additional parameters for vector database storage."""
-
+    # LLM响应缓存启用标志
     enable_llm_cache: bool = field(default=True)
     """Enables caching for LLM responses to avoid redundant computations."""
-
+    # 实体提取缓存启用标志
     enable_llm_cache_for_entity_extract: bool = field(default=True)
     """If True, enables caching for entity extraction steps to reduce LLM costs."""
 
     # Extensions
     # ---
-
+    # 最大并行插入数
     max_parallel_insert: int = field(
         default=int(os.getenv("MAX_PARALLEL_INSERT", DEFAULT_MAX_PARALLEL_INSERT))
     )
     """Maximum number of parallel insert operations."""
-
+    # 进行知识图谱查询时返回的最大节点数
     max_graph_nodes: int = field(
         default=get_env_value("MAX_GRAPH_NODES", DEFAULT_MAX_GRAPH_NODES, int)
     )
     """Maximum number of graph nodes to return in knowledge graph queries."""
-
+    # 实体图谱和向量数据库中每个实体允许的最大源ID数量
     max_source_ids_per_entity: int = field(
         default=get_env_value(
             "MAX_SOURCE_IDS_PER_ENTITY", DEFAULT_MAX_SOURCE_IDS_PER_ENTITY, int
         )
     )
     """Maximum number of source (chunk) ids in entity Grpah + VDB."""
-
+    # 每个关系图谱和向量数据库中允许的最大源ID数量
     max_source_ids_per_relation: int = field(
         default=get_env_value(
             "MAX_SOURCE_IDS_PER_RELATION",
@@ -396,7 +402,7 @@ class LightRAG:
         )
     )
     """Maximum number of source (chunk) ids in relation Graph + VDB."""
-
+    # 源ID限制策略
     source_ids_limit_method: str = field(
         default_factory=lambda: normalize_source_ids_limit_method(
             get_env_value(
@@ -408,11 +414,13 @@ class LightRAG:
     )
     """Strategy for enforcing source_id limits: IGNORE_NEW or FIFO."""
 
+    # 实体/关系文件路径字段中允许存储的最大文件路径数量
     max_file_paths: int = field(
         default=get_env_value("MAX_FILE_PATHS", DEFAULT_MAX_FILE_PATHS, int)
     )
     """Maximum number of file paths to store in entity/relation file_path field."""
 
+    # 文件路径超过最大数量时的占位符文本
     file_path_more_placeholder: str = field(default=DEFAULT_FILE_PATH_MORE_PLACEHOLDER)
     """Placeholder text when file paths exceed max_file_paths limit."""
 
@@ -435,7 +443,7 @@ class LightRAG:
     cosine_better_than_threshold: float = field(
         default=float(os.getenv("COSINE_THRESHOLD", 0.2))
     )
-
+    """Threshold for cosine similarity to consider one vector better than another."""
     ollama_server_infos: Optional[OllamaServerInfos] = field(default=None)
     """Configuration for Ollama server information."""
 
@@ -443,6 +451,7 @@ class LightRAG:
 
     def __post_init__(self):
         from lightrag.kg.shared_storage import (
+            # 各种共享存储和锁机制的初始化
             initialize_share_data,
         )
 
@@ -466,6 +475,7 @@ class LightRAG:
         if hasattr(self, "log_file_path"):
             delattr(self, "log_file_path")
 
+        # 初始化共享数据
         initialize_share_data()
 
         if not os.path.exists(self.working_dir):
@@ -530,6 +540,7 @@ class LightRAG:
         self.embedding_token_limit = embedding_max_token_size
 
         # Fix global_config now
+        # 将 LightRAG 实例转换为字典格式，专门用于将 @dataclass 装饰的类实例转换为字典
         global_config = asdict(self)
         # Restore original EmbeddingFunc object (asdict converts it to dict)
         global_config["embedding_func"] = original_embedding_func
@@ -563,6 +574,7 @@ class LightRAG:
         self.key_string_value_json_storage_cls = partial(  # type: ignore
             self.key_string_value_json_storage_cls, global_config=global_config
         )
+        # partial函数将原函数再封装一层，固定住部分参数
         self.vector_db_storage_cls = partial(  # type: ignore
             self.vector_db_storage_cls, global_config=global_config
         )
@@ -708,7 +720,9 @@ class LightRAG:
             logger.debug("All storage types initialized")
 
     async def finalize_storages(self):
-        """Asynchronously finalize the storages with improved error handling"""
+        """
+        异步关闭和清理所有存储组件，确保数据持久化、释放资源（如数据库连接、文件句柄），并妥善处理关闭过程中的错误
+        Asynchronously finalize the storages with improved error handling"""
         if self._storages_status == StoragesStatus.INITIALIZED:
             storages = [
                 ("full_docs", self.full_docs),
@@ -726,12 +740,15 @@ class LightRAG:
             ]
 
             # Finalize each storage individually to ensure one failure doesn't prevent others from closing
+            # 记录成功关闭与失败关闭
             successful_finalizations = []
             failed_finalizations = []
 
+            # 逐个关闭存储
             for storage_name, storage in storages:
                 if storage:
                     try:
+                        # 异步关闭存储组件，确保数据持久化和资源释放
                         await storage.finalize()
                         successful_finalizations.append(storage_name)
                         logger.debug(f"Successfully finalized {storage_name}")
@@ -756,7 +773,9 @@ class LightRAG:
             self._storages_status = StoragesStatus.FINALIZED
 
     async def check_and_migrate_data(self):
-        """Check if data migration is needed and perform migration if necessary"""
+        """检查并执行数据迁移，确保旧版本 LightRAG 的数据能够升级到新的存储结构。它是一个向后兼容的数据迁移工具。
+        Check if data migration is needed and perform migration if necessary"""
+        # 使用一个全局锁来防止多个实例同时进行迁移
         async with get_data_init_lock():
             try:
                 # Check if migration is needed:
@@ -764,6 +783,7 @@ class LightRAG:
                 # 2. full_entities and full_relations are empty
 
                 # Get all entity labels from graph
+                # # 获取图数据库中的所有实体标签
                 all_entity_labels = (
                     await self.chunk_entity_relation_graph.get_all_labels()
                 )
@@ -774,6 +794,7 @@ class LightRAG:
 
                 try:
                     # Initialize chunk tracking storage after migration
+                    # 迁移实体和关系与 chunk 的关联关系
                     await self._migrate_chunk_tracking_storage()
                 except Exception as e:
                     logger.error(f"Error during chunk_tracking migration: {e}")
@@ -781,6 +802,7 @@ class LightRAG:
 
                 # Check if full_entities and full_relations are empty
                 # Get all processed documents to check their entity/relation data
+                # 获取已处理文档列表
                 try:
                     processed_docs = await self.doc_status.get_docs_by_status(
                         DocStatus.PROCESSED
@@ -791,6 +813,7 @@ class LightRAG:
                         return
 
                     # Check first few documents to see if they have full_entities/full_relations data
+                    # 检查是否需要迁移实体/关系数据
                     migration_needed = True
                     checked_count = 0
                     max_check = min(5, len(processed_docs))  # Check up to 5 documents
@@ -815,6 +838,7 @@ class LightRAG:
                     )
 
                     # Perform migration
+                    # 执行实体和关系数据迁移
                     await self._migrate_entity_relation_data(processed_docs)
 
                 except Exception as e:
@@ -1057,6 +1081,9 @@ class LightRAG:
                 )
 
     async def get_graph_labels(self):
+        """
+        获取所有图谱标签
+        """
         text = await self.chunk_entity_relation_graph.get_all_labels()
         return text
 
@@ -1066,11 +1093,11 @@ class LightRAG:
         max_depth: int = 3,
         max_nodes: int = None,
     ) -> KnowledgeGraph:
-        """Get knowledge graph for a given label
+        """Get knowledge graph for a given label，这个知识图谱包括节点和边
 
         Args:
             node_label (str): Label to get knowledge graph for
-            max_depth (int): Maximum depth of graph
+            max_depth (int): Maximum depth of graph  子图的跳数
             max_nodes (int, optional): Maximum number of nodes to return. Defaults to self.max_graph_nodes.
 
         Returns:
@@ -1088,6 +1115,9 @@ class LightRAG:
         )
 
     def _get_storage_class(self, storage_name: str) -> Callable[..., Any]:
+        """
+        需要哪个就引入哪个，获取输入storage_name对应的存储类
+        """
         # Direct imports for default storage implementations
         if storage_name == "JsonKVStorage":
             from lightrag.kg.json_kv_impl import JsonKVStorage
@@ -1262,6 +1292,8 @@ class LightRAG:
         track_id: str | None = None,
     ) -> str:
         """
+        文档处理流水线的入队阶段，负责接收文档并将其加入处理队列。
+        它是文档索引的第一步，主要完成文档的验证、去重、状态初始化和持久化。
         Pipeline for Processing Documents
 
         1. Validate ids if provided or generate MD5 hash IDs and remove duplicate contents
@@ -1289,6 +1321,7 @@ class LightRAG:
             file_paths = [file_paths]
 
         # If file_paths is provided, ensure it matches the number of documents
+        # 处理文件路径
         if file_paths is not None:
             if isinstance(file_paths, str):
                 file_paths = [file_paths]
@@ -1303,14 +1336,17 @@ class LightRAG:
         # 1. Validate ids if provided or generate MD5 hash IDs and remove duplicate contents
         if ids is not None:
             # Check if the number of IDs matches the number of documents
+            # 验证ID数量
             if len(ids) != len(input):
                 raise ValueError("Number of IDs must match the number of documents")
 
             # Check if IDs are unique
+            # 验证ID的唯一性
             if len(ids) != len(set(ids)):
                 raise ValueError("IDs must be unique")
 
             # Generate contents dict and remove duplicates in one pass
+            # 去重：相同内容只保留第一个
             unique_contents = {}
             for id_, doc, path in zip(ids, input, file_paths):
                 cleaned_content = sanitize_text_for_encoding(doc)
@@ -1318,12 +1354,14 @@ class LightRAG:
                     unique_contents[cleaned_content] = (id_, path)
 
             # Reconstruct contents with unique content
+            # 重建 contents 字典
             contents = {
                 id_: {"content": content, "file_path": file_path}
                 for content, (id_, file_path) in unique_contents.items()
             }
         else:
             # Clean input text and remove duplicates in one pass
+            # 清理文本并且去重
             unique_content_with_paths = {}
             for doc, path in zip(input, file_paths):
                 cleaned_content = sanitize_text_for_encoding(doc)
@@ -1331,6 +1369,7 @@ class LightRAG:
                     unique_content_with_paths[cleaned_content] = path
 
             # Generate contents dict of MD5 hash IDs and documents with paths
+            # 生成 MD5 哈希作为 doc_id
             contents = {
                 compute_mdhash_id(content, prefix="doc-"): {
                     "content": content,
@@ -1340,6 +1379,7 @@ class LightRAG:
             }
 
         # 2. Generate document initial status (without content)
+        # 生成文档初始状态
         new_docs: dict[str, Any] = {
             id_: {
                 "status": DocStatus.PENDING,
@@ -1355,13 +1395,16 @@ class LightRAG:
             for id_, content_data in contents.items()
         }
 
-        # 3. Filter out already processed documents
+        # 3. Filter out already processed documents,过滤已存在的文档
         # Get docs ids
+        # 获取所有新文档 ID
         all_new_doc_ids = set(new_docs.keys())
         # Exclude IDs of documents that are already enqueued
+        # 调用 doc_status 存储的 filter_keys，返回不存在的 ID
         unique_new_doc_ids = await self.doc_status.filter_keys(all_new_doc_ids)
 
         # Log ignored document IDs (documents that were filtered out because they already exist)
+        # 记录被忽略的文档
         ignored_ids = list(all_new_doc_ids - unique_new_doc_ids)
         if ignored_ids:
             for doc_id in ignored_ids:
@@ -1387,6 +1430,7 @@ class LightRAG:
 
         # 4. Store document content in full_docs and status in doc_status
         #    Store full document content separately
+        # 准备完整的文档数据
         full_docs_data = {
             doc_id: {
                 "content": contents[doc_id]["content"],
@@ -1394,8 +1438,10 @@ class LightRAG:
             }
             for doc_id in new_docs.keys()
         }
+        # 存储到 full_docs（完整文档内容）
         await self.full_docs.upsert(full_docs_data)
         # Persist data to disk immediately
+        # 立即持久化到磁盘
         await self.full_docs.index_done_callback()
 
         # Store document status (without content)
@@ -1477,30 +1523,42 @@ class LightRAG:
 
     async def _validate_and_fix_document_consistency(
         self,
-        to_process_docs: dict[str, DocProcessingStatus],
-        pipeline_status: dict,
+        to_process_docs: dict[str, DocProcessingStatus],    #待处理文档列表
+        pipeline_status: dict,       # 管道状态（跨进程共享）
         pipeline_status_lock: asyncio.Lock,
     ) -> dict[str, DocProcessingStatus]:
-        """Validate and fix document data consistency by deleting inconsistent entries, but preserve failed documents"""
+        """验证并修复文档数据的一致性，确保 doc_status 存储中的记录与 full_docs 存储中的实际内容保持同步
+        返回修复后的文档列表
+        这个函数是 apipeline_process_enqueue_documents 处理流程的第一道防线，确保后续处理的文档都是数据完整且状态正确的。
+        Validate and fix document data consistency by deleting inconsistent entries, but preserve failed documents"""
+        # 不一致文档（需要删除）
         inconsistent_docs = []
+        # 失败文档，需要保留
         failed_docs_to_preserve = []
         successful_deletions = 0
+
+        # 失败文档（DocStatus.FAILED）：保留在 doc_status 中供人工排查
+        # 其他不一致文档：删除 doc_status 中的"孤儿"记录
 
         # Check each document's data consistency
         for doc_id, status_doc in to_process_docs.items():
             # Check if corresponding content exists in full_docs
             content_data = await self.full_docs.get_by_id(doc_id)
-            if not content_data:
+            if not content_data:    # doc_status 有记录，但 full_docs 没内容
                 # Check if this is a failed document that should be preserved
                 if (
                     hasattr(status_doc, "status")
                     and status_doc.status == DocStatus.FAILED
                 ):
+                    # 保留失败记录
                     failed_docs_to_preserve.append(doc_id)
                 else:
+                    # 标记为不一致文档
                     inconsistent_docs.append(doc_id)
 
         # Log information about failed documents that will be preserved
+        # 保留失败文档记录
+        # 失败文档可能包含有价值的错误信息，不应自动删除
         if failed_docs_to_preserve:
             async with pipeline_status_lock:
                 preserve_message = f"Preserving {len(failed_docs_to_preserve)} failed document entries for manual review"
@@ -1509,10 +1567,12 @@ class LightRAG:
                 pipeline_status["history_messages"].append(preserve_message)
 
             # Remove failed documents from processing list but keep them in doc_status
+            # 从待处理列表中移除（但不删除 doc_status 记录）
             for doc_id in failed_docs_to_preserve:
                 to_process_docs.pop(doc_id, None)
 
         # Delete inconsistent document entries(excluding failed documents)
+        # 删除不一致的文档记录
         if inconsistent_docs:
             async with pipeline_status_lock:
                 summary_message = (
@@ -1560,6 +1620,8 @@ class LightRAG:
         #     pipeline_status["history_messages"].append(final_message)
 
         # Reset PROCESSING and FAILED documents that pass consistency checks to PENDING status
+
+        # 重置异常状态文档
         docs_to_reset = {}
         reset_count = 0
 
@@ -1608,6 +1670,7 @@ class LightRAG:
         split_by_character_only: bool = False,
     ) -> None:
         """
+        负责将已经入队的文档进行分块、实体关系提取和知识图谱构建
         Process pending documents by splitting them into chunks, processing
         each chunk for entity and relation extraction, and updating the
         document status.
@@ -1620,6 +1683,7 @@ class LightRAG:
         """
 
         # Get pipeline status shared data and lock
+        # 获取跨进程共享的管道状态
         pipeline_status = await get_namespace_data(
             "pipeline_status", workspace=self.workspace
         )
@@ -1631,6 +1695,7 @@ class LightRAG:
         async with pipeline_status_lock:
             # Ensure only one worker is processing documents
             if not pipeline_status.get("busy", False):
+                # 获取所有待处理文档（PROCESSING、FAILED、PENDING 状态）
                 processing_docs, failed_docs, pending_docs = await asyncio.gather(
                     self.doc_status.get_docs_by_status(DocStatus.PROCESSING),
                     self.doc_status.get_docs_by_status(DocStatus.FAILED),
@@ -1638,17 +1703,21 @@ class LightRAG:
                 )
 
                 to_process_docs: dict[str, DocProcessingStatus] = {}
+                # 异常中断的处理中文档
                 to_process_docs.update(processing_docs)
+                # 失败文档
                 to_process_docs.update(failed_docs)
+                # 待处理文档
                 to_process_docs.update(pending_docs)
 
                 if not to_process_docs:
                     logger.info("No documents to process")
                     return
 
+                # 多进程并发控制
                 pipeline_status.update(
                     {
-                        "busy": True,
+                        "busy": True,       #标记为忙碌，阻止其他进程
                         "job_name": "Default Job",
                         "job_start": datetime.now(timezone.utc).isoformat(),
                         "docs": 0,
@@ -1663,6 +1732,7 @@ class LightRAG:
                 del pipeline_status["history_messages"][:]
             else:
                 # Another process is busy, just set request flag and return
+                # 设置待处理标志
                 pipeline_status["request_pending"] = True
                 logger.info(
                     "Another process is already processing the document queue. Request queued."
@@ -1673,11 +1743,12 @@ class LightRAG:
             # Process documents until no more documents or requests
             while True:
                 # Check for cancellation request at the start of main loop
+                # 在主循环开始时检查取消请求
                 async with pipeline_status_lock:
                     if pipeline_status.get("cancellation_requested", False):
                         # Clear pending request
                         pipeline_status["request_pending"] = False
-                        # Celar cancellation flag
+                        # Clear cancellation flag
                         pipeline_status["cancellation_requested"] = False
 
                         log_message = "Pipeline cancelled by user"
@@ -1688,6 +1759,7 @@ class LightRAG:
                         # Exit directly, skipping request_pending check
                         return
 
+                # 说明所有文档都被处理结束
                 if not to_process_docs:
                     log_message = "All enqueued documents have been processed"
                     logger.info(log_message)
@@ -1696,6 +1768,7 @@ class LightRAG:
                     break
 
                 # Validate document data consistency and fix any issues as part of the pipeline
+                # 检查文档状态与实际内容的一致性
                 to_process_docs = await self._validate_and_fix_document_consistency(
                     to_process_docs, pipeline_status, pipeline_status_lock
                 )
@@ -1749,7 +1822,9 @@ class LightRAG:
                     pipeline_status_lock: asyncio.Lock,
                     semaphore: asyncio.Semaphore,
                 ) -> None:
-                    """Process single document"""
+                    """Process single document
+                    主要步骤包括分块、文本块和实体等的存储、实体关系提取、节点合并、状态更新等
+                    """
                     # Initialize variables at the start to prevent UnboundLocalError in error handling
                     file_path = "unknown_source"
                     current_file_number = 0
@@ -1851,7 +1926,10 @@ class LightRAG:
                                     raise PipelineCancelledException("User cancelled")
 
                             # Process document in two stages
+                            # 两阶段并行处理
                             # Stage 1: Process text chunks and docs (parallel execution)
+                            # 阶段 1：文本块和文档状态存储（并行）
+                            # 这里总共三个并行任务
                             doc_status_task = asyncio.create_task(
                                 self.doc_status.upsert(
                                     {
@@ -1876,9 +1954,11 @@ class LightRAG:
                                     }
                                 )
                             )
+                            # 存储到向量数据库
                             chunks_vdb_task = asyncio.create_task(
                                 self.chunks_vdb.upsert(chunks)
                             )
+                            # 存储文本块
                             text_chunks_task = asyncio.create_task(
                                 self.text_chunks.upsert(chunks)
                             )
@@ -1892,9 +1972,11 @@ class LightRAG:
                             entity_relation_task = None
 
                             # Execute first stage tasks
+                            # 并行执行第一阶段的几个任务
                             await asyncio.gather(*first_stage_tasks)
 
                             # Stage 2: Process entity relation graph (after text_chunks are saved)
+                            # 阶段 2：实体关系提取
                             entity_relation_task = asyncio.create_task(
                                 self._process_extract_entities(
                                     chunks, pipeline_status, pipeline_status_lock
@@ -1937,6 +2019,7 @@ class LightRAG:
                                     task.cancel()
 
                             # Persistent llm cache with error handling
+                            # 带错误处理的持久化 LLM 缓存
                             if self.llm_response_cache:
                                 try:
                                     await self.llm_response_cache.index_done_callback()
@@ -1971,6 +2054,7 @@ class LightRAG:
                             )
 
                         # Concurrency is controlled by keyed lock for individual entities and relationships
+                        # 单个实体关系的并发由键控锁控制
                         if file_extraction_stage_ok:
                             try:
                                 # Check for cancellation before merge
@@ -2005,6 +2089,7 @@ class LightRAG:
                                 # Record processing end time
                                 processing_end_time = int(time.time())
 
+                                # 更新文档状态为已完成
                                 await self.doc_status.upsert(
                                     {
                                         doc_id: {
@@ -2028,6 +2113,7 @@ class LightRAG:
                                 )
 
                                 # Call _insert_done after processing each file
+                                # 持久化所有存储
                                 await self._insert_done()
 
                                 async with pipeline_status_lock:
@@ -2096,6 +2182,7 @@ class LightRAG:
                                 )
 
                 # Create processing tasks for all documents
+                # 对于之前所有需要处理的文档，创建处理任务，使用process_document函数
                 doc_tasks = []
                 for doc_id, status_doc in to_process_docs.items():
                     doc_tasks.append(
@@ -2112,6 +2199,7 @@ class LightRAG:
 
                 # Wait for all document processing to complete
                 try:
+                    # 进入事件循环，开始执行任务
                     await asyncio.gather(*doc_tasks)
                 except PipelineCancelledException:
                     # Cancel all remaining tasks
@@ -2135,7 +2223,8 @@ class LightRAG:
 
                 if not has_pending_request:
                     break
-
+                
+                # 下面的逻辑都是去处理当前处理完后，但是有新的待处理请求进来的情况
                 log_message = "Processing additional documents due to pending request"
                 logger.info(log_message)
                 pipeline_status["latest_message"] = log_message
@@ -2147,7 +2236,7 @@ class LightRAG:
                     self.doc_status.get_docs_by_status(DocStatus.FAILED),
                     self.doc_status.get_docs_by_status(DocStatus.PENDING),
                 )
-
+                # 更新完后，进入下一个循环，直到遇到break或者报错才退出
                 to_process_docs = {}
                 to_process_docs.update(processing_docs)
                 to_process_docs.update(failed_docs)
@@ -2168,9 +2257,14 @@ class LightRAG:
     async def _process_extract_entities(
         self, chunk: dict[str, Any], pipeline_status=None, pipeline_status_lock=None
     ) -> list:
+        """
+        提取实体
+        """
         try:
             chunk_results = await extract_entities(
                 chunk,
+                # asdict 是 Python 标准库 dataclasses 模块提供的函数，它的作用是将 dataclass 实例转换为字典。
+                # asdict(self) 会将 LightRAG 类的所有字段转换为字典
                 global_config=asdict(self),
                 pipeline_status=pipeline_status,
                 pipeline_status_lock=pipeline_status_lock,
@@ -2189,8 +2283,12 @@ class LightRAG:
     async def _insert_done(
         self, pipeline_status=None, pipeline_status_lock=None
     ) -> None:
+        """
+        持久化所有存储
+        """
         tasks = [
             cast(StorageNameSpace, storage_inst).index_done_callback()
+            # 对于每一种存储类型，调用其持久化方法，将数据存储落盘，封装成一个task列表
             for storage_inst in [  # type: ignore
                 self.full_docs,
                 self.doc_status,
@@ -2225,14 +2323,18 @@ class LightRAG:
 
     async def ainsert_custom_kg(
         self,
-        custom_kg: dict[str, Any],
+        custom_kg: dict[str, Any],  # 自定义知识图谱数据
         full_doc_id: str = None,
     ) -> None:
+        """
+        插入自定义知识图谱，允许用户直接提供预处理好的实体、关系和文档块数据，绕过 LightRAG 的自动提取流程
+        插入的东西有：文本块插入向量存储和文本块存储，实体和关系插入知识图谱和向量存储
+        """
         update_storage = False
         try:
             # Insert chunks into vector storage
             all_chunks_data: dict[str, dict[str, str]] = {}
-            chunk_to_source_map: dict[str, str] = {}
+            chunk_to_source_map: dict[str, str] = {}    # 映射 source_id → chunk_id
             for chunk_data in custom_kg.get("chunks", []):
                 chunk_content = sanitize_text_for_encoding(chunk_data["content"])
                 source_id = chunk_data["source_id"]
@@ -2257,6 +2359,7 @@ class LightRAG:
                     "status": DocStatus.PROCESSED,
                 }
                 all_chunks_data[chunk_id] = chunk_entry
+                # 建立 source_id 到 chunk_id 的映射
                 chunk_to_source_map[source_id] = chunk_id
                 update_storage = True
 
@@ -2425,7 +2528,7 @@ class LightRAG:
         param: QueryParam = QueryParam(),
         system_prompt: str | None = None,
     ) -> str | AsyncIterator[str]:
-        """
+        """异步查询接口，用于向知识图谱提问并获取 LLM 生成的回答
         Perform a async query (backward compatibility wrapper).
 
         This function is now a wrapper around aquery_llm that maintains backward compatibility
@@ -2458,7 +2561,7 @@ class LightRAG:
         query: str,
         param: QueryParam = QueryParam(),
     ) -> dict[str, Any]:
-        """
+        """调用封装aquery_data的同步接口
         Synchronous data retrieval API: returns structured retrieval results without LLM generation.
 
         This function is the synchronous version of aquery_data, providing the same functionality
@@ -2480,6 +2583,7 @@ class LightRAG:
         param: QueryParam = QueryParam(),
     ) -> dict[str, Any]:
         """
+        用于获取结构化的知识图谱数据，但不调用 LLM 生成回答。
         Asynchronous data retrieval API: returns structured retrieval results without LLM generation.
 
         This function reuses the same logic as aquery but stops before LLM generation,
@@ -2610,6 +2714,7 @@ class LightRAG:
 
         query_result = None
 
+        # 这几个模式需要查询知识图谱
         if data_param.mode in ["local", "global", "hybrid", "mix"]:
             logger.debug(f"[aquery_data] Using kg_query for mode: {data_param.mode}")
             query_result = await kg_query(
@@ -2624,6 +2729,7 @@ class LightRAG:
                 system_prompt=None,
                 chunks_vdb=self.chunks_vdb,
             )
+        # 纯向量查询
         elif data_param.mode == "naive":
             logger.debug(f"[aquery_data] Using naive_query for mode: {data_param.mode}")
             query_result = await naive_query(
@@ -2634,6 +2740,7 @@ class LightRAG:
                 hashing_kv=self.llm_response_cache,
                 system_prompt=None,
             )
+        # 跳过所有检索步骤，直接将用户查询发送给LLM
         elif data_param.mode == "bypass":
             logger.debug("[aquery_data] Using bypass mode")
             # bypass mode returns empty data using convert_to_user_format
@@ -2664,9 +2771,11 @@ class LightRAG:
             logger.info("[aquery_data] Query returned no results.")
         else:
             # Extract raw_data from QueryResult
+            # 从检索回答中提取结构化的元数据
             final_data = query_result.raw_data or {}
 
             # Log final result counts - adapt to new data format from convert_to_user_format
+            # 记录检索到的数据量
             if final_data and "data" in final_data:
                 data_section = final_data["data"]
                 entities_count = len(data_section.get("entities", []))
@@ -2678,7 +2787,7 @@ class LightRAG:
             else:
                 logger.warning("[aquery_data] No data section found in query result")
 
-        await self._query_done()
+        await self._query_done() #持久化存储
         return final_data
 
     async def aquery_llm(
@@ -2688,6 +2797,7 @@ class LightRAG:
         system_prompt: str | None = None,
     ) -> dict[str, Any]:
         """
+        完整的查询接口，返回结构化的检索结果和 LLM 生成的回答
         Asynchronous complete query API: returns structured retrieval results with LLM generation.
 
         This function performs a single query operation and returns both structured data and LLM response,
@@ -2740,8 +2850,8 @@ class LightRAG:
                 response = await use_llm_func(
                     query.strip(),
                     system_prompt=system_prompt,
-                    history_messages=param.conversation_history,
-                    enable_cot=True,
+                    history_messages=param.conversation_history,    #对话历史
+                    enable_cot=True,    #启用思维链
                     stream=param.stream,
                 )
                 if type(response) is str:
@@ -2826,6 +2936,7 @@ class LightRAG:
         system_prompt: str | None = None,
     ) -> dict[str, Any]:
         """
+        同步的查询接口，返回结构化检索数据 + LLM 生成的回答
         Synchronous complete query API: returns structured retrieval results with LLM generation.
 
         This function is the synchronous version of aquery_llm, providing the same functionality
@@ -2888,7 +2999,8 @@ class LightRAG:
     async def aget_docs_by_ids(
         self, ids: str | list[str]
     ) -> dict[str, DocProcessingStatus]:
-        """Retrieves the processing status for one or more documents by their IDs.
+        """通过文档 ID 检索一个或多个文档的处理状态,返回一个字典（ID：状态）
+        Retrieves the processing status for one or more documents by their IDs.
 
         Args:
             ids: A single document ID (string) or a list of document IDs (list of strings).
@@ -2918,6 +3030,7 @@ class LightRAG:
             return {}
 
         # Create tasks to fetch document statuses concurrently using the doc_status storage
+        # 创建多个任务，list里是task，是get_by_id()的协程对象
         tasks = [self.doc_status.get_by_id(doc_id) for doc_id in id_list]
         # Execute tasks concurrently and gather the results. Results maintain order.
         # Type hint indicates results can be DocProcessingStatus or None if not found.
@@ -2952,7 +3065,12 @@ class LightRAG:
     async def adelete_by_doc_id(
         self, doc_id: str, delete_llm_cache: bool = False
     ) -> DeletionResult:
-        """Delete a document and all its related data, including chunks, graph elements.
+        """文档删除核心函数,负责删除文档及其所有衍生数据,并智能重建受影响的知识图谱。
+        删除文档的所有存储层数据
+        分析并处理受影响的实体和关系
+        使用 LLM 缓存重建部分受影响的知识图谱
+        确保多进程环境下的数据一致性
+        Delete a document and all its related data, including chunks, graph elements.
 
         This method orchestrates a comprehensive deletion process for a given document ID.
         It ensures that not only the document itself but also all its derived and associated
@@ -2993,6 +3111,7 @@ class LightRAG:
                 - `file_path` (str | None): The file path of the deleted document, if available.
         """
         # Get pipeline status shared data and lock for validation
+        # 获取跨进程共享的管道状态
         pipeline_status = await get_namespace_data(
             "pipeline_status", workspace=self.workspace
         )
@@ -3001,7 +3120,11 @@ class LightRAG:
         )
 
         # Track whether WE acquired the pipeline
+        # 标记是否获取了管道控制权
         we_acquired_pipeline = False
+        # 单文档删除: 设置 job_name="Single document deletion",阻止其他单文档删除并发
+        # 批量删除: 设置 job_name="Deleting {N} Documents",允许多个删除操作并发执行
+        # 非删除任务: 拒绝删除请求,返回 403
 
         # Check and acquire pipeline if needed
         async with pipeline_status_lock:
@@ -3063,6 +3186,7 @@ class LightRAG:
                 )
 
             # Check document status and log warning for non-completed documents
+            # 检查文档状态,对于未完成处理的文档记录警告日志
             raw_status = doc_status_data.get("status")
             try:
                 doc_status = DocStatus(raw_status)
@@ -3097,6 +3221,7 @@ class LightRAG:
                     )
                 logger.info(warning_msg)
                 # Update pipeline status for monitoring
+                # 更新管道状态以供监控
                 async with pipeline_status_lock:
                     pipeline_status["latest_message"] = warning_msg
                     pipeline_status["history_messages"].append(warning_msg)
@@ -3104,6 +3229,7 @@ class LightRAG:
             # 2. Get chunk IDs from document status
             chunk_ids = set(doc_status_data.get("chunks_list", []))
 
+            # 无 chunks 的文档,直接删除
             if not chunk_ids:
                 logger.warning(f"No chunks found for document {doc_id}")
                 # Mark that deletion operations have started
@@ -3138,6 +3264,7 @@ class LightRAG:
             deletion_operations_started = True
 
             if delete_llm_cache and chunk_ids:
+                 # 从 text_chunks 中获取每个 chunk 关联的 LLM 缓存 ID
                 if not self.llm_response_cache:
                     logger.info(
                         "Skipping LLM cache collection for document %s because cache storage is unavailable",
@@ -3149,6 +3276,7 @@ class LightRAG:
                         doc_id,
                     )
                 else:
+                    # 从 text_chunks 中获取每个 chunk 关联的 LLM 缓存 ID
                     try:
                         chunk_data_list = await self.text_chunks.get_by_ids(
                             list(chunk_ids)
@@ -3157,10 +3285,12 @@ class LightRAG:
                         for chunk_data in chunk_data_list:
                             if not chunk_data or not isinstance(chunk_data, dict):
                                 continue
+                            # 获取大模型缓存 ID 列表
                             cache_ids = chunk_data.get("llm_cache_list", [])
                             if not isinstance(cache_ids, list):
                                 continue
                             for cache_id in cache_ids:
+                                # 确保是非空字符串且未重复添加
                                 if (
                                     isinstance(cache_id, str)
                                     and cache_id
@@ -3189,15 +3319,16 @@ class LightRAG:
                         ) from cache_collect_error
 
             # 4. Analyze entities and relationships that will be affected
-            entities_to_delete = set()
-            entities_to_rebuild = {}  # entity_name -> remaining chunk id list
-            relationships_to_delete = set()
-            relationships_to_rebuild = {}  # (src, tgt) -> remaining chunk id list
+            entities_to_delete = set()  # 需要完全删除的实体
+            entities_to_rebuild = {}  # entity_name -> remaining chunk id list   # 需要重建的实体 -> 剩余 chunk IDs
+            relationships_to_delete = set() # 需要完全删除的关系
+            relationships_to_rebuild = {}  # (src, tgt) -> remaining chunk id list   # 需要重建的关系 -> 剩余 chunk IDs
             entity_chunk_updates: dict[str, list[str]] = {}
             relation_chunk_updates: dict[tuple[str, str], list[str]] = {}
 
             try:
                 # Get affected entities and relations from full_entities and full_relations storage
+                # 从 full_entities 和 full_relations 获取受影响的元素
                 doc_entities_data = await self.full_entities.get_by_id(doc_id)
                 doc_relations_data = await self.full_relations.get_by_id(doc_id)
 
@@ -3205,13 +3336,16 @@ class LightRAG:
                 affected_edges = []
 
                 # Get entity data from graph storage using entity names from full_entities
+                # 从图存储批量获取实体数据
                 if doc_entities_data and "entity_names" in doc_entities_data:
                     entity_names = doc_entities_data["entity_names"]
                     # get_nodes_batch returns dict[str, dict], need to convert to list[dict]
+                    # 通过实体名批量获取实体节点数据
                     nodes_dict = await self.chunk_entity_relation_graph.get_nodes_batch(
                         entity_names
                     )
                     for entity_name in entity_names:
+                        # 如果实体存在于图存储中,则添加到受影响节点列表
                         node_data = nodes_dict.get(entity_name)
                         if node_data:
                             # Ensure compatibility with existing logic that expects "id" field
@@ -3220,6 +3354,7 @@ class LightRAG:
                             affected_nodes.append(node_data)
 
                 # Get relation data from graph storage using relation pairs from full_relations
+                # 从图存储批量获取关系数据
                 if doc_relations_data and "relation_pairs" in doc_relations_data:
                     relation_pairs = doc_relations_data["relation_pairs"]
                     edge_pairs_dicts = [
@@ -3231,6 +3366,7 @@ class LightRAG:
                     )
 
                     for pair in relation_pairs:
+                        # 如果关系存在于图存储中,则添加到受影响边列表
                         src, tgt = pair[0], pair[1]
                         edge_key = (src, tgt)
                         edge_data = edges_dict.get(edge_key)
@@ -3247,23 +3383,29 @@ class LightRAG:
                 raise Exception(f"Failed to analyze graph dependencies: {e}") from e
 
             try:
+                # 处理实体依赖  affected_nodes
                 # Process entities
                 for node_data in affected_nodes:
                     node_label = node_data.get("entity_id")
                     if not node_label:
                         continue
-
+                    
+                    # 获取实体现有的 chunk 引用（哪些chunk里包含这个实体）
                     existing_sources: list[str] = []
                     if self.entity_chunks:
+                        # 通过node_label获取存储在向量数据库中对应实体的chunk引用
                         stored_chunks = await self.entity_chunks.get_by_id(node_label)
                         if stored_chunks and isinstance(stored_chunks, dict):
+                            # 从存储的chunk数据中提取chunk_ids
                             existing_sources = [
                                 chunk_id
                                 for chunk_id in stored_chunks.get("chunk_ids", [])
                                 if chunk_id
                             ]
 
+                    # 如果向量数据库中没有找到chunk引用,则从图数据库的属性中提取chunk引用
                     if not existing_sources and node_data.get("source_id"):
+                        # Fallback: 从图数据库的属性中提取chunk引用
                         existing_sources = [
                             chunk_id
                             for chunk_id in node_data["source_id"].split(
@@ -3272,18 +3414,23 @@ class LightRAG:
                             if chunk_id
                         ]
 
+                    # 如果找了两轮，仍然没有找到chunk引用,则标记该实体为删除
                     if not existing_sources:
                         # No chunk references means this entity should be deleted
+                        # 无 chunk 引用,标记为删除
                         entities_to_delete.add(node_label)
                         entity_chunk_updates[node_label] = []
                         continue
-
+                    
+                    # 计算剩余的 chunk 引用（排除将被删除的 chunk IDs）
                     remaining_sources = subtract_source_ids(existing_sources, chunk_ids)
 
                     if not remaining_sources:
+                         # 所有 chunks 都被删除,标记为删除
                         entities_to_delete.add(node_label)
                         entity_chunk_updates[node_label] = []
                     elif remaining_sources != existing_sources:
+                        # 部分 chunks 被删除,标记为重建
                         entities_to_rebuild[node_label] = remaining_sources
                         entity_chunk_updates[node_label] = remaining_sources
                     else:
@@ -3295,6 +3442,7 @@ class LightRAG:
                     pipeline_status["latest_message"] = log_message
                     pipeline_status["history_messages"].append(log_message)
 
+                # 处理关系依赖  affected_edges
                 # Process relationships
                 for edge_data in affected_edges:
                     # source target is not in normalize order in graph db property
@@ -3357,9 +3505,11 @@ class LightRAG:
                     logger.info(log_message)
                     pipeline_status["latest_message"] = log_message
                     pipeline_status["history_messages"].append(log_message)
-
+                
+                # 更新chunk引用存储
                 current_time = int(time.time())
 
+                # 更新 entity_chunks 存储
                 if entity_chunk_updates and self.entity_chunks:
                     entity_upsert_payload = {}
                     for entity_name, remaining in entity_chunk_updates.items():
@@ -3367,6 +3517,7 @@ class LightRAG:
                             # Empty entities are deleted alongside graph nodes later
                             continue
                         entity_upsert_payload[entity_name] = {
+                            # 因为remaining是刚刚减法计算出来的，所以上一步就已经排除了将被删除的chunk IDs
                             "chunk_ids": remaining,
                             "count": len(remaining),
                             "updated_at": current_time,
@@ -3374,6 +3525,7 @@ class LightRAG:
                     if entity_upsert_payload:
                         await self.entity_chunks.upsert(entity_upsert_payload)
 
+                # 更新 relation_chunks 存储
                 if relation_chunk_updates and self.relation_chunks:
                     relation_upsert_payload = {}
                     for edge_tuple, remaining in relation_chunk_updates.items():
@@ -3397,6 +3549,7 @@ class LightRAG:
             # Data integrity is ensured by allowing only one process to hold pipeline at a time（no graph db lock is needed anymore)
 
             # 5. Delete chunks from storage
+            # 从向量数据库与文本数据库中删除chunks
             if chunk_ids:
                 try:
                     await self.chunks_vdb.delete(chunk_ids)
@@ -3415,6 +3568,7 @@ class LightRAG:
                     raise Exception(f"Failed to delete document chunks: {e}") from e
 
             # 6. Delete relationships that have no remaining sources
+            # 删除完全失效的关系
             if relationships_to_delete:
                 try:
                     # Delete from relation vdb
@@ -3429,11 +3583,13 @@ class LightRAG:
                     await self.relationships_vdb.delete(rel_ids_to_delete)
 
                     # Delete from graph
+                    # 删除图中的边
                     await self.chunk_entity_relation_graph.remove_edges(
                         list(relationships_to_delete)
                     )
 
                     # Delete from relation_chunks storage
+                    # 删除 relation_chunks 存储
                     if self.relation_chunks:
                         relation_storage_keys = [
                             make_relation_chunk_key(src, tgt)
@@ -3452,9 +3608,11 @@ class LightRAG:
                     raise Exception(f"Failed to delete relationships: {e}") from e
 
             # 7. Delete entities that have no remaining sources
+            # 删除完全失效的实体
             if entities_to_delete:
                 try:
                     # Batch get all edges for entities to avoid N+1 query problem
+                    # # 批量获取实体的所有边（避免 N+1 查询）
                     nodes_edges_dict = (
                         await self.chunk_entity_relation_graph.get_nodes_edges_batch(
                             list(entities_to_delete)
@@ -3462,14 +3620,19 @@ class LightRAG:
                     )
 
                     # Debug: Check and log all edges before deleting nodes
+                    # 清理残留的边
                     edges_to_delete = set()
                     edges_still_exist = 0
 
+                    # 遍历实体及其边字典以构建待删除边集合
                     for entity, edges in nodes_edges_dict.items():
                         if edges:
                             for src, tgt in edges:
                                 # Normalize edge representation (sorted for consistency)
+
+                                # 构建边的元组
                                 edge_tuple = tuple(sorted((src, tgt)))
+                                # 添加到待删除边集合
                                 edges_to_delete.add(edge_tuple)
 
                                 if (
@@ -3496,6 +3659,7 @@ class LightRAG:
 
                     # Clean residual edges from VDB and storage before deleting nodes
                     if edges_to_delete:
+                        # 从向量数据库删除残留边
                         # Delete from relationships_vdb
                         rel_ids_to_delete = []
                         for src, tgt in edges_to_delete:
@@ -3508,6 +3672,7 @@ class LightRAG:
                         await self.relationships_vdb.delete(rel_ids_to_delete)
 
                         # Delete from relation_chunks storage
+                        # 删除 relation_chunks 存储
                         if self.relation_chunks:
                             relation_storage_keys = [
                                 make_relation_chunk_key(src, tgt)
@@ -3520,11 +3685,13 @@ class LightRAG:
                         )
 
                     # Delete from graph (edges will be auto-deleted with nodes)
+                    # 删除图节点（边会自动删除）
                     await self.chunk_entity_relation_graph.remove_nodes(
                         list(entities_to_delete)
                     )
 
                     # Delete from vector vdb
+                    # 删除实体向量
                     entity_vdb_ids = [
                         compute_mdhash_id(entity, prefix="ent-")
                         for entity in entities_to_delete
@@ -3532,6 +3699,7 @@ class LightRAG:
                     await self.entities_vdb.delete(entity_vdb_ids)
 
                     # Delete from entity_chunks storage
+                    # 删除 chunk 追踪记录
                     if self.entity_chunks:
                         await self.entity_chunks.delete(list(entities_to_delete))
 
@@ -3548,11 +3716,18 @@ class LightRAG:
                     raise Exception(f"Failed to delete entities: {e}") from e
 
             # Persist changes to graph database before entity and relationship rebuild
+            # 持久化图数据库的更改，以便后续的实体和关系重建,确保所有删除操作已写入磁盘
             await self._insert_done()
 
             # 8. Rebuild entities and relationships from remaining chunks
+            # 重建受影响的知识图谱
             if entities_to_rebuild or relationships_to_rebuild:
                 try:
+                    # 重建原理:
+                    # 从剩余的 chunks 中提取文本
+                    # 尝试从 LLM 缓存中获取实体/关系描述
+                    # 如果缓存未命中,调用 LLM 重新提取
+                    # 更新图数据库和向量数据库
                     await rebuild_knowledge_from_chunks(
                         entities_to_rebuild=entities_to_rebuild,
                         relationships_to_rebuild=relationships_to_rebuild,
@@ -3590,6 +3765,7 @@ class LightRAG:
                 logger.error(f"Failed to delete document and status: {e}")
                 raise Exception(f"Failed to delete document and status: {e}") from e
 
+            # 删除 LLM 缓存（可选）
             if delete_llm_cache and doc_llm_cache_ids and self.llm_response_cache:
                 try:
                     await self.llm_response_cache.delete(doc_llm_cache_ids)
@@ -3667,7 +3843,8 @@ class LightRAG:
                     logger.info(completion_msg)
 
     async def adelete_by_entity(self, entity_name: str) -> DeletionResult:
-        """Asynchronously delete an entity and all its relationships.
+        """异步的删除一个实体及其所有关系。
+        Asynchronously delete an entity and all its relationships.
 
         Args:
             entity_name: Name of the entity to delete.
@@ -3824,6 +4001,7 @@ class LightRAG:
         allow_rename: bool = True,
         allow_merge: bool = False,
     ) -> dict[str, Any]:
+        """编辑实体信息的同步方法。"""
         loop = always_get_an_event_loop()
         return loop.run_until_complete(
             self.aedit_entity(entity_name, updated_data, allow_rename, allow_merge)
@@ -3991,7 +4169,7 @@ class LightRAG:
         include_vector_data: bool = False,
     ) -> None:
         """
-        Asynchronously exports all entities, relations, and relationships to various formats.
+        Asynchronously 导出 all entities, relations, and relationships to various formats.
         Args:
             output_path: The path to the output file (including extension).
             file_format: Output format - "csv", "excel", "md", "txt".
@@ -4040,3 +4218,6 @@ class LightRAG:
         loop.run_until_complete(
             self.aexport_data(output_path, file_format, include_vector_data)
         )
+
+# 项目的核心入口是LightRAG类，这是一个用@final和@dataclass装饰的主类，负责整个系统的初始化和协调。 
+# 该类管理所有的存储实例、LLM调用、嵌入函数等核心组件

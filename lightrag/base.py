@@ -37,8 +37,11 @@ from .constants import (
 # the OS environment variables take precedence over the .env file
 load_dotenv(dotenv_path=".env", override=False)
 
-
+# 当 LightRAG 通过 Ollama 兼容接口对外服务时，模拟 Ollama 模型信息
 class OllamaServerInfos:
+    """
+    LightRAG 通过 Ollama 兼容接口对外服务时，模拟 Ollama 模型信息
+    """
     def __init__(self, name=None, tag=None):
         self._lightrag_name = name or os.getenv(
             "OLLAMA_EMULATING_MODEL_NAME", DEFAULT_OLLAMA_MODEL_NAME
@@ -50,10 +53,18 @@ class OllamaServerInfos:
         self.LIGHTRAG_CREATED_AT = DEFAULT_OLLAMA_CREATED_AT
         self.LIGHTRAG_DIGEST = DEFAULT_OLLAMA_DIGEST
 
+    # @property 装饰器
+    # 将 LIGHTRAG_NAME 方法转换为只读属性
+    # 允许通过 obj.LIGHTRAG_NAME 直接访问，而不需要 obj.LIGHTRAG_NAME()
+    # 读取时返回私有属性 _lightrag_name 的值
     @property
     def LIGHTRAG_NAME(self):
         return self._lightrag_name
 
+    # @LIGHTRAG_NAME.setter 装饰器
+    # 定义属性的赋值行为
+    # 允许通过 obj.LIGHTRAG_NAME = value 修改值
+    # 修改时更新私有属性 _lightrag_name
     @LIGHTRAG_NAME.setter
     def LIGHTRAG_NAME(self, value):
         self._lightrag_name = value
@@ -72,70 +83,88 @@ class OllamaServerInfos:
 
 
 class TextChunkSchema(TypedDict):
+    # 块的token数
     tokens: int
+    # 块的文本内容
     content: str
+    # 所属文档ID
     full_doc_id: str
+    # 块在文档中的顺序
     chunk_order_index: int
 
-
+# 泛型，TypeVar 允许你定义一个变量，该变量可以代表任何类型或一组类型
+# 可以避免Any带来的类型检查缺失问题
 T = TypeVar("T")
 
-
+# 用户查询时的核心配置类
 @dataclass
 class QueryParam:
     """Configuration parameters for query execution in LightRAG."""
 
     mode: Literal["local", "global", "hybrid", "naive", "mix", "bypass"] = "mix"
     """Specifies the retrieval mode:
-    - "local": Focuses on context-dependent information.
-    - "global": Utilizes global knowledge.
-    - "hybrid": Combines local and global retrieval methods.
-    - "naive": Performs a basic search without advanced techniques.
-    - "mix": Integrates knowledge graph and vector retrieval.
+    - "local": Focuses on context-dependent information.  本地检索 先查实体 再找边
+    - "global": Utilizes global knowledge.  全局检索    先查边再找实体
+    - "hybrid": Combines local and global retrieval methods.  混合本地+全局检索
+    - "naive": Performs a basic search without advanced techniques.  基础向量搜索
+    - "mix": Integrates knowledge graph and vector retrieval.  混合知识图谱+向量检索
+    - "bypass": Directly uses LLM without retrieval.  直接使用LLM自己的能力进行回答，不进行任何检索
     """
 
+    # 是否只需要返回检索到的上下文，不生成回答
     only_need_context: bool = False
     """If True, only returns the retrieved context without generating a response."""
 
+    # 是否只需要生成的提示词，而不需要生成回答
     only_need_prompt: bool = False
     """If True, only returns the generated prompt without producing a response."""
 
+    # 回答格式
     response_type: str = "Multiple Paragraphs"
     """Defines the response format. Examples: 'Multiple Paragraphs', 'Single Paragraph', 'Bullet Points'."""
 
+    # 是否流式输出
     stream: bool = False
     """If True, enables streaming output for real-time responses."""
 
+    # 检索的实体/关系数量
     top_k: int = int(os.getenv("TOP_K", str(DEFAULT_TOP_K)))
     """Number of top items to retrieve. Represents entities in 'local' mode and relationships in 'global' mode."""
 
+    # 检索的文本块数量
     chunk_top_k: int = int(os.getenv("CHUNK_TOP_K", str(DEFAULT_CHUNK_TOP_K)))
     """Number of text chunks to retrieve initially from vector search and keep after reranking.
     If None, defaults to top_k value.
     """
 
+    # 实体上下文最大 token 数
     max_entity_tokens: int = int(
         os.getenv("MAX_ENTITY_TOKENS", str(DEFAULT_MAX_ENTITY_TOKENS))
     )
     """Maximum number of tokens allocated for entity context in unified token control system."""
 
+    # 关系上下文最大 token 数
     max_relation_tokens: int = int(
         os.getenv("MAX_RELATION_TOKENS", str(DEFAULT_MAX_RELATION_TOKENS))
     )
     """Maximum number of tokens allocated for relationship context in unified token control system."""
 
+    # 总上下文最大 token 数
     max_total_tokens: int = int(
         os.getenv("MAX_TOTAL_TOKENS", str(DEFAULT_MAX_TOTAL_TOKENS))
     )
     """Maximum total tokens budget for the entire query context (entities + relations + chunks + system prompt)."""
 
+    # 高级关键词列表
     hl_keywords: list[str] = field(default_factory=list)
     """List of high-level keywords to prioritize in retrieval."""
 
+    # 低级关键词列表
     ll_keywords: list[str] = field(default_factory=list)
     """List of low-level keywords to refine retrieval focus."""
 
     # History mesages is only send to LLM for context, not used for retrieval
+    # 会话历史消息，仅发送给LLM作为上下文，不用于检索
     conversation_history: list[dict[str, str]] = field(default_factory=list)
     """Stores past conversation history to maintain context.
     Format: [{"role": "user/assistant", "content": "message"}].
@@ -145,48 +174,56 @@ class QueryParam:
     history_turns: int = int(os.getenv("HISTORY_TURNS", str(DEFAULT_HISTORY_TURNS)))
     """Number of complete conversation turns (user-assistant pairs) to consider in the response context."""
 
+    # LLM模型函数覆盖，如果提供则使用此模型函数而不是全局模型函数
     model_func: Callable[..., object] | None = None
     """Optional override for the LLM model function to use for this specific query.
     If provided, this will be used instead of the global model function.
     This allows using different models for different query modes.
     """
-
+    # 用户自定义提示词
     user_prompt: str | None = None
     """User-provided prompt for the query.
     Addition instructions for LLM. If provided, this will be inject into the prompt template.
     It's purpose is the let user customize the way LLM generate the response.
     """
-
+    # 是否启用重新排序
     enable_rerank: bool = os.getenv("RERANK_BY_DEFAULT", "true").lower() == "true"
     """Enable reranking for retrieved text chunks. If True but no rerank model is configured, a warning will be issued.
     Default is True to enable reranking when rerank model is available.
     """
-
+    # 是否在响应中包含参考文献列表
     include_references: bool = False
     """If True, includes reference list in the response for supported endpoints.
     This parameter controls whether the API response includes a references field
     containing citation information for the retrieved content.
     """
 
-
+# 存储命名空间抽象基类
 @dataclass
 class StorageNameSpace(ABC):
+    # 命名空间（如 "entities", "chunks"）
     namespace: str
+    # 工作空间路径（用于多实例隔离）
     workspace: str
+    # 全局配置
     global_config: dict[str, Any]
 
+    # 初始化存储
     async def initialize(self):
         """Initialize the storage"""
         pass
-
+    # 最终化存储
     async def finalize(self):
         """Finalize the storage"""
         pass
-
+    
+    # 索引完成后回调（提交数据）
     @abstractmethod
     async def index_done_callback(self) -> None:
-        """Commit the storage operations after indexing"""
+        """索引完成后回调（提交数据）
+        Commit the storage operations after indexing"""
 
+    # 删除所有数据
     @abstractmethod
     async def drop(self) -> dict[str, str]:
         """Drop all data from storage and clean up resources
@@ -213,13 +250,17 @@ class StorageNameSpace(ABC):
         - If not supported: return {"status": "error", "message": "unsupported"}
         """
 
-
+# 向量存储抽象基类
 @dataclass
 class BaseVectorStorage(StorageNameSpace, ABC):
+    # 嵌入函数
     embedding_func: EmbeddingFunc
+    # 相似度阈值
     cosine_better_than_threshold: float = field(default=0.2)
+    # 元数据字段
     meta_fields: set[str] = field(default_factory=set)
 
+    # 验证嵌入函数是否存在
     def _validate_embedding_func(self):
         """Validate that embedding_func is provided.
 
@@ -235,6 +276,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
                 "Please provide a valid EmbeddingFunc instance."
             )
 
+    # 从嵌入函数 生成集合/表后缀  就是组合模型名称和维度
     def _generate_collection_suffix(self) -> str | None:
         """Generates collection/table suffix from embedding_func.
 
@@ -258,6 +300,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
         safe_model_name = re.sub(r"[^a-zA-Z0-9_]", "_", model_name.lower())
         return f"{safe_model_name}_{embedding_dim}d"
 
+    # 向量搜索，返回前 top_k 个最相似的结果
     @abstractmethod
     async def query(
         self, query: str, top_k: int, query_embedding: list[float] = None
@@ -271,6 +314,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
                            If provided, skips embedding computation for better performance.
         """
 
+    # 插入或更新向量
     @abstractmethod
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         """Insert or update vectors in the storage.
@@ -281,6 +325,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
            KG-storage-log should be used to avoid data corruption
         """
 
+    # 删除单个实体
     @abstractmethod
     async def delete_entity(self, entity_name: str) -> None:
         """Delete a single entity by its name.
@@ -291,6 +336,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
            KG-storage-log should be used to avoid data corruption
         """
 
+    # 删除实体关系
     @abstractmethod
     async def delete_entity_relation(self, entity_name: str) -> None:
         """Delete relations for a given entity.
@@ -301,6 +347,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
            KG-storage-log should be used to avoid data corruption
         """
 
+    # 通过ID获取向量数据
     @abstractmethod
     async def get_by_id(self, id: str) -> dict[str, Any] | None:
         """Get vector data by its ID
@@ -312,7 +359,8 @@ class BaseVectorStorage(StorageNameSpace, ABC):
             The vector data if found, or None if not found
         """
         pass
-
+    
+    # 通过多个ID批量获取向量数据
     @abstractmethod
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
         """Get multiple vector data by their IDs
@@ -324,7 +372,8 @@ class BaseVectorStorage(StorageNameSpace, ABC):
             List of vector data objects that were found
         """
         pass
-
+    
+    # 删除多个向量
     @abstractmethod
     async def delete(self, ids: list[str]):
         """Delete vectors with specified IDs
@@ -338,6 +387,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
             ids: List of vector IDs to be deleted
         """
 
+    # 仅获取向量值（不含元数据），用于高效计算
     @abstractmethod
     async def get_vectors_by_ids(self, ids: list[str]) -> dict[str, list[float]]:
         """Get vectors by their IDs, returning only ID and vector data for efficiency
@@ -351,7 +401,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
         """
         pass
 
-
+# 用于存储文档、实体、关系等结构化数据
 @dataclass
 class BaseKVStorage(StorageNameSpace, ABC):
     embedding_func: EmbeddingFunc
@@ -364,6 +414,7 @@ class BaseKVStorage(StorageNameSpace, ABC):
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
         """Get values by ids"""
 
+    # 返回不存在的键
     @abstractmethod
     async def filter_keys(self, keys: set[str]) -> set[str]:
         """Return un-exist keys"""
@@ -373,6 +424,8 @@ class BaseKVStorage(StorageNameSpace, ABC):
         """Upsert data
 
         Importance notes for in-memory storage:
+        1. 更改将在下次 index_done_callback 时保存到磁盘
+        2. 更新标志以通知其他进程需要数据持久化
         1. Changes will be persisted to disk during the next index_done_callback
         2. update flags to notify other processes that data persistence is needed
         """
@@ -400,7 +453,7 @@ class BaseKVStorage(StorageNameSpace, ABC):
             bool: True if storage contains no data, False otherwise
         """
 
-
+# 用于知识图谱的节点和边的存储 所有边都是无向的
 @dataclass
 class BaseGraphStorage(StorageNameSpace, ABC):
     """All operations related to edges in graph should be undirected."""
@@ -430,6 +483,7 @@ class BaseGraphStorage(StorageNameSpace, ABC):
             True if the edge exists, False otherwise
         """
 
+    # 获取节点的度（连接的边数）
     @abstractmethod
     async def node_degree(self, node_id: str) -> int:
         """Get the degree (number of connected edges) of a node.
@@ -441,6 +495,7 @@ class BaseGraphStorage(StorageNameSpace, ABC):
             The number of edges connected to the node
         """
 
+    # 获取边的度（源节点和目标节点的度数之和）
     @abstractmethod
     async def edge_degree(self, src_id: str, tgt_id: str) -> int:
         """Get the total degree of an edge (sum of degrees of its source and target nodes).
@@ -489,7 +544,7 @@ class BaseGraphStorage(StorageNameSpace, ABC):
             A list of (source_id, target_id) tuples representing edges,
             or None if the node doesn't exist
         """
-
+    # 批量操作
     async def get_nodes_batch(self, node_ids: list[str]) -> dict[str, dict]:
         """Get nodes as a batch using UNWIND
 
@@ -550,6 +605,7 @@ class BaseGraphStorage(StorageNameSpace, ABC):
                 result[(src_id, tgt_id)] = edge
         return result
 
+    # 批量获取某个节点连接的边
     async def get_nodes_edges_batch(
         self, node_ids: list[str]
     ) -> dict[str, list[tuple[str, str]]]:
@@ -677,7 +733,7 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         Returns:
             A list of all edges, where each edge is a dictionary of its properties
         """
-
+    # 获取热门标签（按节点度数排序）
     @abstractmethod
     async def get_popular_labels(self, limit: int = 300) -> list[str]:
         """Get popular labels by node degree (most connected entities)
@@ -688,7 +744,7 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         Returns:
             List of labels sorted by degree (highest first)
         """
-
+    # 模糊搜索标签
     @abstractmethod
     async def search_labels(self, query: str, limit: int = 50) -> list[str]:
         """Search labels with fuzzy matching
@@ -701,43 +757,54 @@ class BaseGraphStorage(StorageNameSpace, ABC):
             List of matching labels sorted by relevance
         """
 
-
+# 文档状态管理
 class DocStatus(str, Enum):
     """Document processing status"""
 
-    PENDING = "pending"
-    PROCESSING = "processing"
-    PREPROCESSED = "preprocessed"
-    PROCESSED = "processed"
-    FAILED = "failed"
+    PENDING = "pending"  # 待处理
+    PROCESSING = "processing"  # 处理中
+    PREPROCESSED = "preprocessed"  # 预处理完成
+    PROCESSED = "processed"  # 处理完成
+    FAILED = "failed"  # 处理失败
 
-
+# 跟踪文档处理状态
 @dataclass
 class DocProcessingStatus:
     """Document processing status data structure"""
-
+    # 前100个字符的内容摘要，用于预览
     content_summary: str
     """First 100 chars of document content, used for preview"""
+    # 文档总长度
     content_length: int
     """Total length of document"""
+    # 文档文件路径
     file_path: str
     """File path of the document"""
+    # 当前处理状态
     status: DocStatus
     """Current processing status"""
+    # 创建时间
     created_at: str
     """ISO format timestamp when document was created"""
+    # 最后更新时间
     updated_at: str
     """ISO format timestamp when document was last updated"""
+    # 跟踪ID，用于监控进度
     track_id: str | None = None
     """Tracking ID for monitoring progress"""
+    # 分块数量
     chunks_count: int | None = None
     """Number of chunks after splitting, used for processing"""
+    # 分块ID列表
     chunks_list: list[str] | None = field(default_factory=list)
     """List of chunk IDs associated with this document, used for deletion"""
+    # 错误信息
     error_msg: str | None = None
     """Error message if failed"""
+    # 额外元数据
     metadata: dict[str, Any] = field(default_factory=dict)
     """Additional metadata"""
+    # 内部字段：多模态处理是否完成
     multimodal_processed: bool | None = field(default=None, repr=False)
     """Internal field: indicates if multimodal processing is complete. Not shown in repr() but accessible for debugging."""
 
@@ -758,7 +825,7 @@ class DocProcessingStatus:
             ):
                 self.status = DocStatus.PREPROCESSED
 
-
+# 文档状态存储抽象基类
 @dataclass
 class DocStatusStorage(BaseKVStorage, ABC):
     """Base class for document status storage"""
@@ -779,6 +846,7 @@ class DocStatusStorage(BaseKVStorage, ABC):
     ) -> dict[str, DocProcessingStatus]:
         """Get all documents with a specific track_id"""
 
+    # 分页查询
     @abstractmethod
     async def get_docs_paginated(
         self,
@@ -844,24 +912,27 @@ class DeletionResult:
 
 # Unified Query Result Data Structures for Reference List Support
 
-
+# 统一查询结果
 @dataclass
 class QueryResult:
     """
-    Unified query result data structure for all query modes.
+    统一查询结果数据结构，适用于所有查询模式。
 
     Attributes:
-        content: Text content for non-streaming responses
-        response_iterator: Streaming response iterator for streaming responses
-        raw_data: Complete structured data including references and metadata
-        is_streaming: Whether this is a streaming result
+        content: 非流式响应的文本内容
+        response_iterator: 流式响应的异步迭代器
+        raw_data: 完整的结构化数据，包括引用和元数据
+        is_streaming: 是否为流式结果
     """
-
+    # 非流式响应的文本内容
     content: Optional[str] = None
+    # AsyncIterator[str] 是 Python 异步编程中的异步迭代器类型，用于表示可以逐步产生字符串值的异步数据流。
+    # 流式响应的异步迭代器
     response_iterator: Optional[AsyncIterator[str]] = None
     raw_data: Optional[Dict[str, Any]] = None
     is_streaming: bool = False
 
+    # 从 raw_data 中提取参考文献列表的便捷属性
     @property
     def reference_list(self) -> List[Dict[str, str]]:
         """
@@ -874,7 +945,7 @@ class QueryResult:
         if self.raw_data:
             return self.raw_data.get("data", {}).get("references", [])
         return []
-
+    # 从 raw_data 中提取元数据的便捷属性
     @property
     def metadata(self) -> Dict[str, Any]:
         """
@@ -887,7 +958,7 @@ class QueryResult:
             return self.raw_data.get("metadata", {})
         return {}
 
-
+# 上下文结果
 @dataclass
 class QueryContextResult:
     """
@@ -897,11 +968,21 @@ class QueryContextResult:
         context: LLM context string
         raw_data: Complete structured data including reference_list
     """
-
+    # LLM 上下文字符串
     context: str
+    # 包含参考文献的完整数据
     raw_data: Dict[str, Any]
 
+    # 提取参考文献
     @property
     def reference_list(self) -> List[Dict[str, str]]:
         """Convenient property to extract reference list from raw_data."""
         return self.raw_data.get("data", {}).get("references", [])
+
+# 定义了所有存储类型的抽象基类和核心数据结构：
+
+# BaseKVStorage：键值存储接口
+# BaseVectorStorage：向量存储接口
+# BaseGraphStorage：图存储接口
+# QueryParam：查询参数配置类
+# StorageNameSpace：存储命名空间抽象类 

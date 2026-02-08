@@ -135,7 +135,11 @@ def get_debug_n_locks_acquired():
 
 
 class UnifiedLock(Generic[T]):
-    """Provide a unified lock interface type for asyncio.Lock and multiprocessing.Lock"""
+    """UnifiedLock 是一个统一的锁接口包装器，它抽象了两种不同类型的锁：
+    asyncio.Lock（协程锁，单进程模式）
+    multiprocessing.Lock（进程锁，多进程模式）
+    通过这个类，LightRAG 可以用相同的 API 在单进程和多进程环境中使用锁。
+    Provide a unified lock interface type for asyncio.Lock and multiprocessing.Lock"""
 
     def __init__(
         self,
@@ -153,9 +157,14 @@ class UnifiedLock(Generic[T]):
         self._async_lock = async_lock  # auxiliary lock for coroutine synchronization
 
     async def __aenter__(self) -> "UnifiedLock[T]":
+        """
+        异步进入
+        """
         try:
             # If in multiprocess mode and async lock exists, acquire it first
+            # 先获取 asyncio.Lock（辅助锁）
             if not self._is_async and self._async_lock is not None:
+                # 协程级别的排队
                 await self._async_lock.acquire()
                 direct_log(
                     f"== Lock == Process {self._pid}: Acquired async lock '{self._name}",
@@ -166,7 +175,9 @@ class UnifiedLock(Generic[T]):
             # Acquire the main lock
             # Note: self._lock should never be None here as the check has been moved
             # to get_internal_lock() and get_data_init_lock() functions
+            # 获取 multiprocessing.Lock（主锁）
             if self._is_async:
+                # 进程级别的排队
                 await self._lock.acquire()
             else:
                 self._lock.acquire()
@@ -192,12 +203,19 @@ class UnifiedLock(Generic[T]):
                 enable_output=True,
             )
             raise
-
+    
+    # 异步退出
+    # 释放顺序：主锁 → 异步锁
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """
+        # 异步退出
+        # 释放顺序：主锁 → 异步锁
+        """
         main_lock_released = False
         async_lock_released = False
         try:
             # Release main lock first
+            # 释放进程锁
             if self._lock is not None:
                 if self._is_async:
                     self._lock.release()
@@ -212,6 +230,7 @@ class UnifiedLock(Generic[T]):
                 main_lock_released = True
 
             # Then release async lock if in multiprocess mode
+            # 释放协程锁
             if not self._is_async and self._async_lock is not None:
                 self._async_lock.release()
                 direct_log(
@@ -256,8 +275,10 @@ class UnifiedLock(Generic[T]):
 
             raise
 
+    # 同步上下文管理器
     def __enter__(self) -> "UnifiedLock[T]":
-        """For backward compatibility"""
+        """同步进入，上下文管理器，同步模式不能使用异步锁保护，可能导致事件循环阻塞
+        For backward compatibility"""
         try:
             if self._is_async:
                 raise RuntimeError("Use 'async with' for shared_storage lock")
@@ -270,6 +291,7 @@ class UnifiedLock(Generic[T]):
                 level="DEBUG",
                 enable_output=self._enable_logging,
             )
+            # 只能在同步模式下使用multiprocessing.Lock
             self._lock.acquire()
             direct_log(
                 f"== Lock == Process {self._pid}: Acquired lock {self._name} (sync)",
@@ -286,7 +308,8 @@ class UnifiedLock(Generic[T]):
             raise
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """For backward compatibility"""
+        """同步退出，退出的时候，释放锁
+        For backward compatibility"""
         try:
             if self._is_async:
                 raise RuntimeError("Use 'async with' for shared_storage lock")
@@ -310,6 +333,8 @@ class UnifiedLock(Generic[T]):
             raise
 
     def locked(self) -> bool:
+        """锁状态查询
+        """
         if self._is_async:
             return self._lock.locked()
         else:
@@ -1103,11 +1128,16 @@ def get_storage_keyed_lock(
 
 
 def get_data_init_lock(enable_logging: bool = False) -> UnifiedLock:
-    """return unified data initialization lock for ensuring atomic data initialization"""
+    """这个函数返回一个统一的数据初始化锁（UnifiedLock），用于确保原子性的数据初始化操作。
+    return unified data initialization lock for ensuring atomic data initialization"""
+
+    # 确保在使用锁之前已经调用 initialize_share_data()
+    # 防止在共享数据未初始化时访问锁
     if _data_init_lock is None:
         raise RuntimeError(
             "Shared data not initialized. Call initialize_share_data() before using locks!"
         )
+    # 根据是否为多进程模式，选择合适的异步锁
     async_lock = _async_locks.get("data_init_lock") if _is_multiprocess else None
     return UnifiedLock(
         lock=_data_init_lock,
@@ -1172,9 +1202,14 @@ def get_keyed_lock_status() -> Dict[str, Any]:
     status["process_id"] = os.getpid()
     return status
 
-
+# 用于初始化跨进程或单进程的共享存储和锁机制，支持两种模式
+# 单进程模式 (workers=1)：使用 asyncio.Lock 和普通 Python 字典
+# 多进程模式 (workers>1)：使用 multiprocessing.Manager 的共享对象
 def initialize_share_data(workers: int = 1):
     """
+    # 用于初始化跨进程或单进程的共享存储和锁机制，支持两种模式
+    # 单进程模式 (workers=1)：使用 asyncio.Lock 和普通 Python 字典
+    # 多进程模式 (workers>1)：使用 multiprocessing.Manager 的共享对象
     Initialize shared storage data for single or multi-process mode.
 
     When used with Gunicorn's preload feature, this function is called once in the
@@ -1211,6 +1246,7 @@ def initialize_share_data(workers: int = 1):
         _last_mp_cleanup_time
 
     # Check if already initialized
+    # 防止重复初始化，保护已经存在的共享数据
     if _initialized:
         direct_log(
             f"Process {os.getpid()} Shared-Data already initialized (multiprocess={_is_multiprocess})"
@@ -1221,17 +1257,28 @@ def initialize_share_data(workers: int = 1):
 
     if workers > 1:
         _is_multiprocess = True
+        # 创建跨进程管理器
         _manager = Manager()
+        # 存储所有锁对象
         _lock_registry = _manager.dict()
+        # 锁的引用计数
         _lock_registry_count = _manager.dict()
+        # 锁清理数据
         _lock_cleanup_data = _manager.dict()
+        # 保护注册表的递归锁
         _registry_guard = _manager.RLock()
+        # 内部数据一致性锁
         _internal_lock = _manager.Lock()
+        # 数据初始化锁
         _data_init_lock = _manager.Lock()
+        # 存储所有命名空间的数据
         _shared_dicts = _manager.dict()
+        # 标记哪些命名空间已初始化
         _init_flags = _manager.dict()
+        # 标记哪些进程需要重新加载数据
         _update_flags = _manager.dict()
 
+        # 创建统一的锁管理器,提供按键锁定的功能，支持细粒度的并发控制
         _storage_keyed_lock = KeyedUnifiedLock()
 
         # Initialize async locks for multiprocess mode
@@ -1266,6 +1313,7 @@ def initialize_share_data(workers: int = 1):
 
 async def initialize_pipeline_status(workspace: str | None = None):
     """
+    初始化管道状态的跨进程共享数据结构，用于在多进程环境（如 Gunicorn）中协调和追踪文档索引任务的执行状态
     Initialize pipeline_status share data with default values.
     This function could be called before during FASTAPI lifespan for each worker.
 
@@ -1274,16 +1322,23 @@ async def initialize_pipeline_status(workspace: str | None = None):
                    If None or empty string, uses the default workspace set by
                    set_default_workspace().
     """
+    # 获取或创建名为 pipeline_status 的命名空间
+    # first_init=True 允许创建新命名空间
+    # workspace 参数支持多租户隔离
     pipeline_namespace = await get_namespace_data(
         "pipeline_status", first_init=True, workspace=workspace
     )
 
+    # 使用 get_internal_lock() 获取全局锁，确保线程/进程安全
+    # 检查 "busy" 字段作为初始化标志
+    # 防止多个 Worker 进程同时初始化同一个命名空间
     async with get_internal_lock():
         # Check if already initialized by checking for required fields
         if "busy" in pipeline_namespace:
             return
 
         # Create a shared list object for history_messages
+        # 根据运行模式选择合适的数据结构，可以是多进程模式，实现跨进程共享
         history_messages = _manager.list() if _is_multiprocess else []
         pipeline_namespace.update(
             {
@@ -1694,6 +1749,7 @@ def set_default_workspace(workspace: str | None = None):
 
 def get_default_workspace() -> str:
     """
+    为了向后兼容，得到默认的workspace。
     Get default workspace for backward compatibility.
 
     Returns:

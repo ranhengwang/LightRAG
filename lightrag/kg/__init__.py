@@ -120,7 +120,8 @@ STORAGES = {
 
 
 def verify_storage_implementation(storage_type: str, storage_name: str) -> None:
-    """Verify if storage implementation is compatible with specified storage type
+    """用于验证存储实现是否与指定的存储类型兼容。
+    Verify if storage implementation is compatible with specified storage type
 
     Args:
         storage_type: Storage type (KV_STORAGE, GRAPH_STORAGE etc.)

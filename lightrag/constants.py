@@ -8,22 +8,34 @@ consistency and makes maintenance easier.
 
 # Default values for server settings
 DEFAULT_WOKERS = 2
+# 默认的图节点最大数量
 DEFAULT_MAX_GRAPH_NODES = 1000
 
 # Default values for extraction settings
-DEFAULT_SUMMARY_LANGUAGE = "English"  # Default language for document processing
+DEFAULT_SUMMARY_LANGUAGE = "Chinese"  # Default language for document processing
+# 默认的二次提取最大次数
 DEFAULT_MAX_GLEANING = 1
+# 默认的实体名称最大长度
 DEFAULT_ENTITY_NAME_MAX_LENGTH = 256
 
 # Number of description fragments to trigger LLM summary
+# 触发 LLM 摘要的描述片段数量
 DEFAULT_FORCE_LLM_SUMMARY_ON_MERGE = 8
+
 # Max description token size to trigger LLM summary
+# 触发 LLM 摘要的最大描述token数量
 DEFAULT_SUMMARY_MAX_TOKENS = 1200
+
 # Recommended LLM summary output length in tokens
+# 推荐的LLM摘要输出长度
 DEFAULT_SUMMARY_LENGTH_RECOMMENDED = 600
+
 # Maximum token size sent to LLM for summary
+# 最大发送给LLM进行摘要的上下文长度
 DEFAULT_SUMMARY_CONTEXT_SIZE = 12000
+
 # Default entities to extract if ENTITY_TYPES is not specified in .env
+# 默认要提取的实体类型
 DEFAULT_ENTITY_TYPES = [
     "Person",
     "Creature",

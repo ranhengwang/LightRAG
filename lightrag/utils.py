@@ -177,6 +177,7 @@ def get_env_value(
     env_key: str, default: any, value_type: type = str, special_none: bool = False
 ) -> any:
     """
+    优先从.env 文件中获取配置值，如果没有则从环境变量中获取。
     Get value from environment variable with type conversion
 
     Args:
@@ -528,7 +529,8 @@ class EmbeddingFunc:
 
 
 def compute_args_hash(*args: Any) -> str:
-    """Compute a hash for the given arguments with safe Unicode handling.
+    """根据传入的参数，计算一个安全的id值
+    Compute a hash for the given arguments with safe Unicode handling.
 
     Args:
         *args: Arguments to hash
@@ -614,15 +616,18 @@ class HealthCheckTimeoutError(Exception):
 
 
 def priority_limit_async_func_call(
+    # 最大并发数
     max_size: int,
     llm_timeout: float = None,
     max_execution_timeout: float = None,
     max_task_duration: float = None,
+    # 队列容量
     max_queue_size: int = 1000,
     cleanup_timeout: float = 2.0,
     queue_name: str = "limit_async",
 ):
     """
+    增强的异步函数并发控制装饰器，用于管理 LLM/Embedding API 的并发请求，具有多层超时保护机制。
     Enhanced priority-limited asynchronous function call decorator with robust timeout handling
 
     This decorator provides a comprehensive solution for managing concurrent LLM requests with:
@@ -661,26 +666,37 @@ def priority_limit_async_func_call(
                     llm_timeout * 2 + 15
                 )  # Reserved timeout buffer for health check phase
 
+        # 优先级队列，用于按优先级顺序处理任务，数字越小优先级越高
         queue = asyncio.PriorityQueue(maxsize=max_queue_size)
         tasks = set()
         initialization_lock = asyncio.Lock()
         counter = 0
+        # 异步事件标志，用于协程间的信号通知。
         shutdown_event = asyncio.Event()
         initialized = False
         worker_health_check_task = None
 
         # Enhanced task state management
+        # task_id -> TaskState的字典
         task_states = {}  # task_id -> TaskState
         task_states_lock = asyncio.Lock()
+        # 弱引用集合，用于追踪活跃的 Future 对象，不阻止垃圾回收。
+        # 当 Future 完成后自动从集合中移除（无需手动删除）
+        # 因为弱引用不增加引用计数
         active_futures = weakref.WeakSet()
         reinit_count = 0
 
+        # 持续从优先级队列取任务执行
+        # 捕获 Worker 超时并包装为 WorkerTimeoutError
         async def worker():
-            """Enhanced worker that processes tasks with proper timeout and state management"""
+            """增强worker，处理任务并提供超时和状态管理
+            Enhanced worker that processes tasks with proper timeout and state management"""
             try:
+                # 主循环，持续处理任务，当关闭事件未设置的时候进行这个循环
                 while not shutdown_event.is_set():
                     try:
                         # Get task from queue with timeout for shutdown checking
+                        # 从优先级队列中获取任务，设置超时以便定期检查关闭信号
                         try:
                             (
                                 priority,
@@ -693,24 +709,32 @@ def priority_limit_async_func_call(
                             continue
 
                         # Get task state and mark worker as started
+                        # 获取任务状态并标记 worker 已启动
+                        # 实现获取一个协程锁，防止竞态条件
                         async with task_states_lock:
+                            # task_states 是task_id -> TaskState的字典
                             if task_id not in task_states:
                                 queue.task_done()
                                 continue
                             task_state = task_states[task_id]
+                            # 标记：Worker 已接手任务
                             task_state.worker_started = True
                             # Record execution start time when worker actually begins processing
+                            # 记录执行开始时间（用于 Health Check 检测超时）
                             task_state.execution_start_time = (
                                 asyncio.get_event_loop().time()
                             )
 
                         # Check if task was cancelled before worker started
+                        # 检查任务是否在 worker 启动前被取消
                         if (
                             task_state.cancellation_requested
                             or task_state.future.cancelled()
                         ):
                             async with task_states_lock:
+                                 # 清理状态
                                 task_states.pop(task_id, None)
+                            # 标记队列任务完成
                             queue.task_done()
                             continue
 
@@ -718,12 +742,14 @@ def priority_limit_async_func_call(
                             # Execute function with timeout protection
                             if max_execution_timeout is not None:
                                 result = await asyncio.wait_for(
+                                    # 执行被装饰的函数
                                     func(*args, **kwargs), timeout=max_execution_timeout
                                 )
                             else:
                                 result = await func(*args, **kwargs)
 
                             # Set result if future is still valid
+                            # 设置结果（如果 Future 还有效）
                             if not task_state.future.done():
                                 task_state.future.set_result(result)
 
@@ -767,22 +793,28 @@ def priority_limit_async_func_call(
             finally:
                 logger.debug(f"{queue_name}: Worker exiting")
 
+        # 监控系统健康状态并自动恢复故障 Worker
         async def enhanced_health_check():
             """Enhanced health check with stuck task detection and recovery"""
+            # # 修改外部作用域的 initialized 变量
             nonlocal initialized
-            try:
+            try:    
+                # 主循环：定期检查系统健康
                 while not shutdown_event.is_set():
                     await asyncio.sleep(5)  # Check every 5 seconds
 
                     current_time = asyncio.get_event_loop().time()
 
                     # Detect and handle stuck tasks based on execution start time
+                    # 收集卡住了的任务
                     if max_task_duration is not None:
                         stuck_tasks = []
                         async with task_states_lock:
                             for task_id, task_state in list(task_states.items()):
                                 # Only check tasks that have started execution
+                                # 只检查已经开始执行的任务
                                 if (
+                                    # 检查逻辑为：worker 已启动且执行时间超过阈值
                                     task_state.worker_started
                                     and task_state.execution_start_time is not None
                                     and current_time - task_state.execution_start_time
@@ -797,6 +829,7 @@ def priority_limit_async_func_call(
                                     )
 
                         # Force cleanup of stuck tasks
+                        # 强制清理卡住的任务
                         for task_id, execution_duration in stuck_tasks:
                             logger.warning(
                                 f"{queue_name}: Detected stuck task {task_id} (execution time: {execution_duration:.1f}s), forcing cleanup"
@@ -804,6 +837,7 @@ def priority_limit_async_func_call(
                             async with task_states_lock:
                                 if task_id in task_states:
                                     task_state = task_states[task_id]
+                                    # 设置异常，通知调用方任务被强制终止
                                     if not task_state.future.done():
                                         task_state.future.set_exception(
                                             HealthCheckTimeoutError(
@@ -813,11 +847,15 @@ def priority_limit_async_func_call(
                                     task_states.pop(task_id, None)
 
                     # Worker recovery logic
+                    # tasks 是外部作用域的 Worker 集合
                     current_tasks = set(tasks)
+                    # 找出已完成的
                     done_tasks = {t for t in current_tasks if t.done()}
+                    # 从集合中移除
                     tasks.difference_update(done_tasks)
-
+                    # 计算当前活跃的 Worker 数量
                     active_tasks_count = len(tasks)
+                    # 需要补充的 Worker 数量
                     workers_needed = max_size - active_tasks_count
 
                     if workers_needed > 0:
@@ -826,28 +864,37 @@ def priority_limit_async_func_call(
                         )
                         new_tasks = set()
                         for _ in range(workers_needed):
+                            # 创建新的 Worker 协程
                             task = asyncio.create_task(worker())
                             new_tasks.add(task)
+                            # 注册回调：Worker 完成时自动从 tasks 集合中移除
                             task.add_done_callback(tasks.discard)
+                        # 添加到现有的 Worker 集合中
                         tasks.update(new_tasks)
 
             except Exception as e:
                 logger.error(f"{queue_name}: Error in enhanced health check: {str(e)}")
             finally:
                 logger.debug(f"{queue_name}: Enhanced health check task exiting")
+                # 标记系统未初始化
                 initialized = False
 
+        # 负责确保 Worker 系统正确初始化，是整个并发控制系统的启动入口
         async def ensure_workers():
-            """Ensure worker system is initialized with enhanced error handling"""
+            """确保 Worker 系统已初始化，带增强的错误处理
+            Ensure worker system is initialized with enhanced error handling"""
             nonlocal initialized, worker_health_check_task, tasks, reinit_count
 
+            # 快速路径：已初始化则直接返回
             if initialized:
                 return
 
+            # 获取初始化锁，防止竞态条件
             async with initialization_lock:
                 if initialized:
                     return
 
+                # 重新初始化计数
                 if reinit_count > 0:
                     reinit_count += 1
                     logger.warning(
@@ -861,6 +908,7 @@ def priority_limit_async_func_call(
                 done_tasks = {t for t in current_tasks if t.done()}
                 tasks.difference_update(done_tasks)
 
+                # 检测残留任务
                 active_tasks_count = len(tasks)
                 if active_tasks_count > 0 and reinit_count > 1:
                     logger.warning(
@@ -898,14 +946,17 @@ def priority_limit_async_func_call(
             """Gracefully shut down all workers and cleanup resources"""
             logger.info(f"{queue_name}: Shutting down priority queue workers")
 
+            # 设置关闭事件，通知所有协程退出
             shutdown_event.set()
 
             # Cancel all active futures
+            # 取消所有活跃的 Future
             for future in list(active_futures):
                 if not future.done():
                     future.cancel()
 
             # Cancel all pending tasks
+            # 取消所有待处理的任务
             async with task_states_lock:
                 for task_id, task_state in list(task_states.items()):
                     if not task_state.future.done():
@@ -913,6 +964,7 @@ def priority_limit_async_func_call(
                 task_states.clear()
 
             # Wait for queue to empty with timeout
+            # 等待队列清空（带超时保护），等待队列中的所有任务被处理完（task_done() 被调用）
             try:
                 await asyncio.wait_for(queue.join(), timeout=5.0)
             except asyncio.TimeoutError:
@@ -921,6 +973,7 @@ def priority_limit_async_func_call(
                 )
 
             # Cancel worker tasks
+            # 取消所有 Worker 协程
             for task in list(tasks):
                 if not task.done():
                     task.cancel()
@@ -930,6 +983,7 @@ def priority_limit_async_func_call(
                 await asyncio.gather(*tasks, return_exceptions=True)
 
             # Cancel health check task
+            # 取消健康检查协程
             if worker_health_check_task and not worker_health_check_task.done():
                 worker_health_check_task.cancel()
                 try:
@@ -939,11 +993,13 @@ def priority_limit_async_func_call(
 
             logger.info(f"{queue_name}: Priority queue workers shutdown complete")
 
+        # @wraps(func)保留原函数的元数据（名称、文档字符串等）
         @wraps(func)
         async def wait_func(
             *args, _priority=10, _timeout=None, _queue_timeout=None, **kwargs
         ):
             """
+            装饰器系统的用户接口层，负责接收用户的函数调用并进行任务调度。它包装了原始的异步函数并提供优先级控制、超时管理、任务追踪等功能。
             Execute function with enhanced priority-based concurrency control and timeout handling
 
             Args:
@@ -961,32 +1017,41 @@ def priority_limit_async_func_call(
                 QueueFullError: If the queue is full and waiting times out
                 Any exception raised by the decorated function
             """
+            # 确保 Worker 系统已初始化
             await ensure_workers()
 
             # Generate unique task ID
+            # 生成唯一的任务 ID
             task_id = f"{id(asyncio.current_task())}_{asyncio.get_event_loop().time()}"
+            # 创建 Future 对象用于接收结果
             future = asyncio.Future()
 
             # Create task state
+            # 创建任务状态追踪对象
             task_state = TaskState(
                 future=future, start_time=asyncio.get_event_loop().time()
             )
 
             try:
                 # Register task state
+                # 注册任务状态（需要加锁防止竞态）
                 async with task_states_lock:
                     task_states[task_id] = task_state
 
+                # 添加到弱引用集合（自动管理内存）
                 active_futures.add(future)
 
                 # Get counter for FIFO ordering
+                # 获取 FIFO 计数器（保证同优先级任务按先来先服务）
                 nonlocal counter
                 async with initialization_lock:
                     current_count = counter
                     counter += 1
 
                 # Queue the task with timeout handling
+                # 将任务放入优先级队列，带入队列超时处理
                 try:
+                    # 带超时的入队
                     if _queue_timeout is not None:
                         await asyncio.wait_for(
                             queue.put(
@@ -995,6 +1060,7 @@ def priority_limit_async_func_call(
                             timeout=_queue_timeout,
                         )
                     else:
+                        # 无超时限制的入队
                         await queue.put(
                             (_priority, current_count, task_id, args, kwargs)
                         )
@@ -1009,6 +1075,7 @@ def priority_limit_async_func_call(
                     raise
 
                 # Wait for result with timeout handling
+                # 等待worker执行完成并返回结果，带用户超时处理
                 try:
                     if _timeout is not None:
                         return await asyncio.wait_for(future, _timeout)
@@ -2094,7 +2161,8 @@ def get_content_summary(content: str, max_length: int = 250) -> str:
 def sanitize_and_normalize_extracted_text(
     input_text: str, remove_inner_quotes=False
 ) -> str:
-    """Santitize and normalize extracted text
+    """分别进行文本清理和编码安全化；以及规范化实体/关系名称和描述文本，确保数据一致性和查询准确性
+    Santitize and normalize extracted text
     Args:
         input_text: text string to be processed
         is_name: whether the input text is a entity or relation name
@@ -2112,7 +2180,9 @@ def sanitize_and_normalize_extracted_text(
 
 
 def normalize_extracted_info(name: str, remove_inner_quotes=False) -> str:
-    """Normalize entity/relation names and description with the following rules:
+    """用于规范化实体/关系名称和描述文本的核心函数，通过一系列规则清洗 LLM 提取的文本，确保数据一致性和查询准确性
+    解决格式问题
+    Normalize entity/relation names and description with the following rules:
     - Clean HTML tags (paragraph and line break tags)
     - Convert Chinese symbols to English symbols
     - Remove spaces between Chinese characters
@@ -2138,10 +2208,12 @@ def normalize_extracted_info(name: str, remove_inner_quotes=False) -> str:
         Normalized entity name
     """
     # Clean HTML tags - remove paragraph and line break tags
+    # 移除html的段落和换行标签
     name = re.sub(r"</p\s*>|<p\s*>|<p/>", "", name, flags=re.IGNORECASE)
     name = re.sub(r"</br\s*>|<br\s*>|<br/>", "", name, flags=re.IGNORECASE)
 
     # Chinese full-width letters to half-width (A-Z, a-z)
+    # 字母转换
     name = name.translate(
         str.maketrans(
             "ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ",
@@ -2150,9 +2222,11 @@ def normalize_extracted_info(name: str, remove_inner_quotes=False) -> str:
     )
 
     # Chinese full-width numbers to half-width
+    # 数字转换
     name = name.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
 
     # Chinese full-width symbols to half-width
+    # 符号转换
     name = name.replace("－", "-")  # Chinese minus
     name = name.replace("＋", "+")  # Chinese plus
     name = name.replace("／", "/")  # Chinese slash
@@ -2172,9 +2246,11 @@ def normalize_extracted_info(name: str, remove_inner_quotes=False) -> str:
     # (?<=[\u4e00-\u9fa5]): Positive lookbehind for Chinese character
     # \s+: One or more whitespace characters
     # (?=[\u4e00-\u9fa5]): Positive lookahead for Chinese character
+    # 移除中文间多余空格
     name = re.sub(r"(?<=[\u4e00-\u9fa5])\s+(?=[\u4e00-\u9fa5])", "", name)
 
     # Remove spaces between Chinese and English/numbers/symbols
+    # 移除中英文/数字间的空格
     name = re.sub(
         r"(?<=[\u4e00-\u9fa5])\s+(?=[a-zA-Z0-9\(\)\[\]@#$%!&\*\-=+_])", "", name
     )
@@ -2183,6 +2259,7 @@ def normalize_extracted_info(name: str, remove_inner_quotes=False) -> str:
     )
 
     # Remove outer quotes
+    # 移除外层引号
     if len(name) >= 2:
         # Handle double quotes
         if name.startswith('"') and name.endswith('"'):
@@ -2212,6 +2289,7 @@ def normalize_extracted_info(name: str, remove_inner_quotes=False) -> str:
             if "《" not in inner_content and "》" not in inner_content:
                 name = inner_content
 
+    # 移除内部引号
     if remove_inner_quotes:
         # Remove Chinese quotes
         name = name.replace("“", "").replace("”", "").replace("‘", "").replace("’", "")
@@ -2224,12 +2302,15 @@ def normalize_extracted_info(name: str, remove_inner_quotes=False) -> str:
         name = re.sub(r"(?<=[^\d])\u202F", " ", name)
 
     # Remove spaces from the beginning and end of the text
+    # 去除首尾空白
     name = name.strip()
 
     # Filter out pure numeric content with length < 3
+    # 长度小于3且全是数字，则将其过滤
     if len(name) < 3 and re.match(r"^[0-9]+$", name):
         return ""
 
+    # 数字+点号过滤
     def should_filter_by_dots(text):
         """
         Check if the string consists only of dots and digits, with at least one dot
@@ -2247,7 +2328,20 @@ def normalize_extracted_info(name: str, remove_inner_quotes=False) -> str:
 
 
 def sanitize_text_for_encoding(text: str, replacement_char: str = "") -> str:
-    """Sanitize text to ensure safe UTF-8 encoding by removing or replacing problematic characters.
+    """文本清理和编码安全化函数，用于确保文本能够安全地进行 UTF-8 编码，
+    防止在 JSON 序列化、数据库存储、LLM 调用等场景中出现编码错误
+    核心问题
+    在 LightRAG 处理文档时，可能遇到各种来源的文本（PDF、Word、网页抓取等），这些文本可能包含：
+
+    代理字符（Surrogate characters: U+D800 到 U+DFFF）
+    非法 Unicode 序列
+    控制字符
+    HTML 实体
+    这些字符会导致：
+    UnicodeEncodeError: 'utf-8' codec can't encode character '\ud800' 
+    in position 42: surrogates not allowed
+
+    Sanitize text to ensure safe UTF-8 encoding by removing or replacing problematic characters.
 
     This function handles:
     - Surrogate characters (the main cause of encoding errors)
@@ -2267,40 +2361,47 @@ def sanitize_text_for_encoding(text: str, replacement_char: str = "") -> str:
     Raises:
         ValueError: When text contains uncleanable encoding issues that cannot be safely processed
     """
+    # 基础验证
     if not text:
-        return text
+        return text # 空文本直接返回
 
     try:
         # First, strip whitespace
-        text = text.strip()
+        text = text.strip() # 去除首尾空白
 
         # Early return if text is empty after basic cleaning
         if not text:
             return text
 
         # Try to encode/decode to catch any encoding issues early
+        # 尝试编码，解决问题
         text.encode("utf-8")
 
         # Remove or replace surrogate characters (U+D800 to U+DFFF)
         # These are the main cause of the encoding error
+        # 移除代理字符
         sanitized = ""
         for char in text:
             code_point = ord(char)
             # Check for surrogate characters
+            # 检查代理字符 (U+D800 到 U+DFFF)
             if 0xD800 <= code_point <= 0xDFFF:
                 # Replace surrogate with replacement character
+                # 替换为空字符串
                 sanitized += replacement_char
                 continue
             # Check for other problematic characters
+            # 检查非字符 (U+FFFE 和 U+FFFF)
             elif code_point == 0xFFFE or code_point == 0xFFFF:
                 # These are non-characters in Unicode
                 sanitized += replacement_char
                 continue
             else:
-                sanitized += char
+                sanitized += char #保留正常字符
 
         # Additional cleanup: remove null bytes and other control characters that might cause issues
         # (but preserve common whitespace like \t, \n, \r)
+        # 移除有问题的控制字符，但保留 \t, \n, \r
         sanitized = re.sub(
             r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", replacement_char, sanitized
         )
@@ -2309,9 +2410,11 @@ def sanitize_text_for_encoding(text: str, replacement_char: str = "") -> str:
         sanitized.encode("utf-8")
 
         # Unescape HTML escapes
+        # 解码 HTML 实体 (例如 &lt; → <, &quot; → ")
         sanitized = html.unescape(sanitized)
 
         # Remove control characters but preserve common whitespace (\t, \n, \r)
+        # 移除扩展控制字符 (但保留 \t, \n, \r)
         sanitized = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]", "", sanitized)
 
         return sanitized.strip()
@@ -2335,7 +2438,9 @@ def sanitize_text_for_encoding(text: str, replacement_char: str = "") -> str:
 
 
 def check_storage_env_vars(storage_name: str) -> None:
-    """Check if all required environment variables for storage implementation exist
+    """
+    检查存储实现所需的所有环境变量是否存在
+    Check if all required environment variables for storage implementation exist
 
     Args:
         storage_name: Storage implementation name
@@ -3350,3 +3455,11 @@ def generate_reference_list_from_chunks(
         reference_list.append({"reference_id": str(i + 1), "file_path": file_path})
 
     return reference_list, updated_chunks
+
+# 提供各种辅助功能，包括：
+
+# 日志配置
+# Token计数
+# 哈希计算
+# 缓存管理
+# 文本处理等
